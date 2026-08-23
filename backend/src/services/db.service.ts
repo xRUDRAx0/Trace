@@ -1,12 +1,20 @@
 import * as admin from 'firebase-admin';
 
 // Check if Firebase Admin is initialized, if not initialize it (only if service account is provided)
-const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
+const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT;
 let useFirestore = false;
 
-if (serviceAccountPath) {
+if (serviceAccountEnv) {
   try {
-    const serviceAccount = require(serviceAccountPath);
+    let serviceAccount;
+    try {
+      // First try to parse it directly as a JSON string (useful for cloud env vars like Render)
+      serviceAccount = JSON.parse(serviceAccountEnv);
+    } catch (e) {
+      // Fallback to treating it as a file path
+      serviceAccount = require(serviceAccountEnv);
+    }
+
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount)

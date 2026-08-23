@@ -440,8 +440,8 @@
   },
   "activeSessionId": null,
   "cachedAiAnalysis": {
-    "workflowName": "Recorded Session #1787",
-    "summary": "Deterministic fallback analysis identified key inefficiencies in Recorded Session #1787.",
+    "workflowName": "Recorded Session #5537",
+    "summary": "Deterministic fallback analysis identified key inefficiencies in Recorded Session #5537.",
     "whyAutomate": "Fallback deterministic analysis shows high repetition and context switching in this workflow.",
     "automationPotential": 51,
     "recommendedAction": "Review deterministic insights and consider manual automation.",
