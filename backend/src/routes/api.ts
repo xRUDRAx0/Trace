@@ -106,8 +106,14 @@ router.post('/analysis', async (req, res) => {
 
 router.post('/automation/generate', async (req, res) => {
   try {
-    // Generate an automation plan directly from the cached AI analysis
-    const aiAnalysis = await dbService.getAiAnalysis();
+    // Generate an automation plan directly from the provided AI analysis or fallback to cached
+    let aiAnalysis = req.body.aiAnalysis;
+    let workflowId = req.body.workflowId;
+
+    if (!aiAnalysis || !aiAnalysis.automationPlan) {
+        aiAnalysis = await dbService.getAiAnalysis();
+    }
+
     if (!aiAnalysis || !aiAnalysis.automationPlan) {
         return res.status(400).json({ error: 'No AI analysis available to generate automation' });
     }
@@ -115,7 +121,7 @@ router.post('/automation/generate', async (req, res) => {
     const plan = {
       id: 'auto_' + Date.now(),
       name: aiAnalysis.workflowName + ' Automation',
-      workflowId: 'wf_latest',
+      workflowId: workflowId || 'wf_latest',
       trigger: { type: 'manual' },
       steps: aiAnalysis.automationPlan.steps.map((s: any) => {
         const actionName = s.action || s.type || 'Unknown';
