@@ -1,0 +1,325 @@
+import * as admin from 'firebase-admin';
+
+// Check if Firebase Admin is initialized, if not initialize it (only if service account is provided)
+const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT;
+let useFirestore = false;
+
+if (serviceAccountPath) {
+  try {
+    const serviceAccount = require(serviceAccountPath);
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount)
+      });
+      console.log('Firebase Admin initialized with Firestore.');
+      useFirestore = true;
+    }
+  } catch (error) {
+    console.warn('Failed to initialize Firebase Admin. Falling back to local memory store.', error);
+  }
+} else {
+  console.log('No FIREBASE_SERVICE_ACCOUNT found in .env. Falling back to local memory store.');
+}
+
+// Interfaces
+export interface AiAnalysisResult {
+  workflowName: string;
+  summary: string;
+  whyAutomate: string;
+  automationPotential: number;
+  recommendedAction: string;
+  estimatedTimeSaving: string;
+  confidence: number;
+  insights: any[];
+  automationPlan: {
+    steps: any[];
+    humanApprovalSteps: string[];
+    reasoning: string;
+  };
+}
+
+export interface ObservationSession {
+  id: string;
+  startedAt: string;
+  endedAt?: string;
+  status: 'Recording' | 'Completed';
+  durationInSeconds: number;
+  eventCount: number;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  status: 'Recorded' | 'Analyzed' | 'Automated';
+  createdAt: string;
+  durationInSeconds: number;
+  eventCount: number;
+}
+
+export interface WorkflowEvent {
+  id: string;
+  workflowId?: string; // Legacy/pattern association
+  sessionId?: string; // Primary observation session association
+  timestamp: string;
+  application: 'Gmail' | 'Spreadsheet' | 'Report';
+  action: string;
+  target: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AutomationStep {
+  type: string;
+  originalAction?: string;
+  action?: string;
+  target?: string;
+  value?: string;
+  url?: string;
+  key?: string;
+}
+
+export interface AutomationPlan {
+  id: string;
+  name: string;
+  workflowId: string;
+  trigger: { type: string };
+  steps: AutomationStep[];
+  status: 'Draft' | 'Approved';
+}
+
+export interface StepResult {
+  step: string;
+  status: 'Pending' | 'Running' | 'WaitingForApproval' | 'Completed' | 'Failed';
+  originalAction?: string;
+}
+
+export interface ExecutionRun {
+  runId: string;
+  automationId: string;
+  status: 'Running' | 'WaitingForApproval' | 'Completed' | 'Failed';
+  currentStepIndex: number;
+  stepResults: StepResult[];
+  context?: Record<string, any>;
+  startedAt: number;
+  completedAt?: number;
+}
+
+// Preload Demo Automation
+const demoSalesAutomation: AutomationPlan = {
+  id: 'auto_demo_sales',
+  name: 'Weekly Sales Report',
+  workflowId: 'wf_demo',
+  trigger: { type: 'manual' },
+  status: 'Approved',
+  steps: [
+    { type: 'receive_weekly_sales_email' },
+    { type: 'download_sales_csv' },
+    { type: 'open_spreadsheet' },
+    { type: 'clean_invalid_rows' },
+    { type: 'calculate_total_sales' },
+    { type: 'calculate_average_order_value' },
+    { type: 'update_management_report' },
+    { type: 'generate_summary' },
+    { type: 'human_approval', originalAction: 'send_summary' }
+  ]
+};
+
+// Local In-Memory Fallback
+const memoryWorkflows: Workflow[] = [];
+const memorySessions: ObservationSession[] = [];
+const memoryEvents: WorkflowEvent[] = [];
+const memoryAutomations: AutomationPlan[] = [demoSalesAutomation];
+const memoryExecutions: ExecutionRun[] = [];
+let observationSettings = { active: false };
+let activeSessionId: string | null = null;
+let cachedAiAnalysis: AiAnalysisResult | null = null;
+
+export class DbService {
+  async saveWorkflow(workflow: Workflow): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('workflows').doc(workflow.id).set(workflow);
+    } else {
+      memoryWorkflows.push(workflow);
+    }
+  }
+
+  getActiveWorkflowId() {
+    return activeSessionId; // Keeping method name for compatibility with some files, but it returns sessionId
+  }
+
+  setActiveWorkflowId(id: string | null) {
+    activeSessionId = id;
+  }
+
+  async saveSession(session: ObservationSession): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('sessions').doc(session.id).set(session);
+    } else {
+      const idx = memorySessions.findIndex(s => s.id === session.id);
+      if (idx >= 0) memorySessions[idx] = session;
+      else memorySessions.push(session);
+    }
+  }
+
+  async getSessionById(sessionId: string): Promise<ObservationSession | null> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('sessions').doc(sessionId).get();
+      return doc.exists ? (doc.data() as ObservationSession) : null;
+    }
+    return memorySessions.find(s => s.id === sessionId) || null;
+  }
+
+  async getSessions(): Promise<ObservationSession[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('sessions').orderBy('startedAt', 'desc').get();
+      return snapshot.docs.map(doc => doc.data() as ObservationSession);
+    }
+    return [...memorySessions].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  }
+
+  async getWorkflows(): Promise<Workflow[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('workflows').get();
+      return snapshot.docs.map(doc => doc.data() as Workflow);
+    }
+    return [...memoryWorkflows];
+  }
+
+  async saveEvents(events: WorkflowEvent[]): Promise<void> {
+    if (useFirestore) {
+      const batch = admin.firestore().batch();
+      events.forEach(event => {
+        const ref = admin.firestore().collection('workflow_events').doc(event.id);
+        batch.set(ref, event);
+      });
+      await batch.commit();
+    } else {
+      memoryEvents.push(...events);
+    }
+  }
+
+  async getEventsByWorkflowId(workflowId: string): Promise<WorkflowEvent[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('workflow_events')
+        .where('workflowId', '==', workflowId)
+        .get();
+      return snapshot.docs.map(doc => doc.data() as WorkflowEvent);
+    }
+    return memoryEvents.filter(e => e.workflowId === workflowId);
+  }
+
+  async getEventsBySessionId(sessionId: string): Promise<WorkflowEvent[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('workflow_events')
+        .where('sessionId', '==', sessionId)
+        .orderBy('timestamp', 'asc')
+        .get();
+      return snapshot.docs.map(doc => doc.data() as WorkflowEvent);
+    }
+    return memoryEvents.filter(e => e.sessionId === sessionId).sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  }
+
+  async saveAutomation(plan: AutomationPlan): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('automations').doc(plan.id).set(plan);
+    } else {
+      const idx = memoryAutomations.findIndex(a => a.id === plan.id);
+      if (idx >= 0) memoryAutomations[idx] = plan;
+      else memoryAutomations.push(plan);
+    }
+  }
+
+  async getAutomationById(planId: string): Promise<AutomationPlan | null> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('automations').doc(planId).get();
+      return doc.exists ? (doc.data() as AutomationPlan) : null;
+    }
+    return memoryAutomations.find(a => a.id === planId) || null;
+  }
+
+  async getAllAutomations(): Promise<AutomationPlan[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('automations').get();
+      return snapshot.docs.map(doc => doc.data() as AutomationPlan);
+    }
+    return [...memoryAutomations];
+  }
+
+  async saveExecutionRun(run: ExecutionRun): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('executions').doc(run.runId).set(run);
+    } else {
+      const idx = memoryExecutions.findIndex(e => e.runId === run.runId);
+      if (idx >= 0) memoryExecutions[idx] = run;
+      else memoryExecutions.push(run);
+    }
+  }
+
+  async getExecutionRun(runId: string): Promise<ExecutionRun | null> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('executions').doc(runId).get();
+      return doc.exists ? (doc.data() as ExecutionRun) : null;
+    }
+    return memoryExecutions.find(e => e.runId === runId) || null;
+  }
+
+  async getLatestCompletedExecution(automationId: string): Promise<ExecutionRun | null> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('executions')
+        .where('automationId', '==', automationId)
+        .where('status', '==', 'Completed')
+        .orderBy('completedAt', 'desc')
+        .limit(1)
+        .get();
+      return snapshot.docs.length ? (snapshot.docs[0].data() as ExecutionRun) : null;
+    }
+    const completed = memoryExecutions.filter(e => e.automationId === automationId && e.status === 'Completed');
+    return completed.sort((a, b) => Number(b.completedAt || 0) - Number(a.completedAt || 0))[0] || null;
+  }
+
+  async getAllExecutions(): Promise<ExecutionRun[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('executions').orderBy('startedAt', 'desc').get();
+      return snapshot.docs.map(doc => doc.data() as ExecutionRun);
+    }
+    return memoryExecutions.sort((a, b) => Number(b.startedAt) - Number(a.startedAt));
+  }
+
+  async getAllEvents(): Promise<WorkflowEvent[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('events').orderBy('timestamp', 'desc').get();
+      return snapshot.docs.map(doc => doc.data() as WorkflowEvent);
+    }
+    return memoryEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  }
+
+  async getObservationSettings(): Promise<{ active: boolean }> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('settings').doc('observation').get();
+      return doc.exists ? (doc.data() as { active: boolean }) : { active: true };
+    }
+    return observationSettings;
+  }
+
+  async saveObservationSettings(settings: { active: boolean }): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('settings').doc('observation').set(settings);
+      return;
+    }
+    observationSettings = settings;
+  }
+
+  async saveAiAnalysis(analysis: AiAnalysisResult): Promise<void> {
+    cachedAiAnalysis = analysis;
+    if (useFirestore) {
+      await admin.firestore().collection('settings').doc('ai_analysis').set(analysis);
+    }
+  }
+
+  async getAiAnalysis(): Promise<AiAnalysisResult | null> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('settings').doc('ai_analysis').get();
+      return doc.exists ? (doc.data() as AiAnalysisResult) : null;
+    }
+    return cachedAiAnalysis;
+  }
+}
