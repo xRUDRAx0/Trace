@@ -10,7 +10,7 @@ export default function Insights() {
   const [optimizingInsight, setOptimizingInsight] = useState<any | null>(null);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/intelligence')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/intelligence')
       .then(res => res.json())
       .then(d => {
         setData(d);

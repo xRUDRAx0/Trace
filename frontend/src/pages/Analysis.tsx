@@ -43,7 +43,7 @@ export default function Analysis() {
 
     const fetchAnalysis = async () => {
       try {
-        const response = await fetch(`http://localhost:3001/api/workflows/${workflowId}/analyze`, {
+        const response = await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/workflows/${workflowId}/analyze`, {
           method: 'POST'
         });
         const result = await response.json();
@@ -67,7 +67,7 @@ export default function Analysis() {
     if (!data || !workflowId) return;
     setGenerating(true);
     try {
-      const response = await fetch('http://localhost:3001/api/automation/generate', {
+      const response = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/automation/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aiAnalysis: data.ai, workflowId })

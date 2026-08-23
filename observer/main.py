@@ -274,7 +274,13 @@ def main():
     print("Starting WorkTwin Local Observer Agent...")
     try:
         # Connect to Node.js backend
-        sio.connect('http://localhost:3001')
+        backend_url = "http://localhost:3001"
+        import sys
+        if len(sys.argv) > 1:
+            backend_url = sys.argv[1]
+        
+        print(f"Connecting to backend at {backend_url}...")
+        sio.connect(backend_url)
         print("Waiting for observation commands...")
         
         # Fallback to initialize status

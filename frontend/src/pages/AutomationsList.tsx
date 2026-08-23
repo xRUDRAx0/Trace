@@ -8,7 +8,7 @@ export default function AutomationsList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/automations')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/automations')
       .then(res => res.json())
       .then(data => {
         setAutomations(data);
@@ -22,7 +22,7 @@ export default function AutomationsList() {
 
   const handleRunNow = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/automations/${id}/execute`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/automations/${id}/execute`, {
         method: 'POST'
       });
       const data = await res.json();

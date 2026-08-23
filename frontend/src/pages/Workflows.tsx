@@ -9,7 +9,7 @@ export default function Workflows() {
 
   useEffect(() => {
     // We will use the dashboard API to get the scored workflows for convenience
-    fetch('http://localhost:3001/api/dashboard')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/dashboard')
       .then(res => res.json())
       .then(data => {
         setWorkflows(data.detectedWorkflows || []);

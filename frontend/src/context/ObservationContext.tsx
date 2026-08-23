@@ -21,7 +21,7 @@ export function ObservationProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     // Initial fetch of settings
-    fetch('http://localhost:3001/api/settings/observation')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/settings/observation')
       .then(res => res.json())
       .then(data => {
         setIsActive(data.active);
@@ -34,7 +34,7 @@ export function ObservationProvider({ children }: { children: React.ReactNode })
       });
 
     // Setup Socket.IO
-    const newSocket = io('http://localhost:3001');
+    const newSocket = io((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '');
     setSocket(newSocket);
 
     newSocket.on('observation_status', (data) => {
@@ -65,7 +65,7 @@ export function ObservationProvider({ children }: { children: React.ReactNode })
     setIsActive(newState); // Optimistic UI update
     
     try {
-      await fetch('http://localhost:3001/api/settings/observation', {
+      await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/settings/observation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active: newState })

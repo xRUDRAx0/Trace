@@ -16,7 +16,7 @@ export default function Dashboard() {
   const { liveEvents, isActive } = useObservation();
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/dashboard')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/dashboard')
       .then(res => res.json())
       .then(d => {
         setData(d);
@@ -38,7 +38,7 @@ export default function Dashboard() {
 
   const handleViewEvidence = async (workflowId: string) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/sessions/${workflowId}/events`);
+      const res = await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/sessions/${workflowId}/events`);
       const events = await res.json();
       setEvidenceEvents(events);
     } catch (e) {

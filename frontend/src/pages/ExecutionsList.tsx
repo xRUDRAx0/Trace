@@ -8,7 +8,7 @@ export default function ExecutionsList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:3001/api/executions')
+    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/executions')
       .then(res => res.json())
       .then(data => {
         setExecutions(data);

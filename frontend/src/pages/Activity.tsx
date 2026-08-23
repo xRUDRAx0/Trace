@@ -20,8 +20,8 @@ export default function Activity() {
     const loadData = async () => {
       try {
         const [sessRes, evRes] = await Promise.all([
-          fetch('http://localhost:3001/api/sessions'),
-          fetch('http://localhost:3001/api/events')
+          fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/sessions'),
+          fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/events')
         ]);
         const [sessData, evData] = await Promise.all([sessRes.json(), evRes.json()]);
         setSessions(sessData);

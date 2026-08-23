@@ -55,7 +55,7 @@ export default function Recorder() {
 
       try {
         // Save Workflow
-        await fetch('http://localhost:3001/api/workflows', {
+        await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/workflows', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(newWorkflow)
@@ -63,7 +63,7 @@ export default function Recorder() {
 
         // Save Events
         if (events.length > 0) {
-          await fetch('http://localhost:3001/api/workflow-events', {
+          await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/workflow-events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ events })
