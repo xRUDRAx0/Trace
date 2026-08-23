@@ -29,7 +29,7 @@ export default function Execution() {
 
     const fetchRun = async () => {
       try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/executions/${runId}`);
+        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/executions/${runId}`);
         const data = await res.json();
         if (data.success) {
           setRun(data.run);
@@ -54,7 +54,7 @@ export default function Execution() {
   const handleApprove = async () => {
     if (!runId) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/executions/${runId}/approve`, { method: 'POST' });
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/executions/${runId}/approve`, { method: 'POST' });
     } catch (e) {
       alert('Failed to approve step');
     }
@@ -68,7 +68,7 @@ export default function Execution() {
   const handleCancel = async () => {
     if (!runId) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/executions/${runId}/cancel`, { method: 'POST' });
+      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/executions/${runId}/cancel`, { method: 'POST' });
     } catch (e) {
       alert('Failed to cancel execution');
     }

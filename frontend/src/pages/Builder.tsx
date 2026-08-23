@@ -34,7 +34,7 @@ export default function Builder() {
   useEffect(() => {
     if (!planId) return;
     
-    fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/automations/${planId}`)
+    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/automations/${planId}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) setPlan(data.plan);
@@ -47,7 +47,7 @@ export default function Builder() {
     if (!planId) return;
     setSaving(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || (import.meta.env.VITE_API_URL || 'http://localhost:3001') + ''}/api/automations/${planId}/approve`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/automations/${planId}/approve`, {
         method: 'POST'
       });
       const data = await res.json();
