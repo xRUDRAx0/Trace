@@ -71,7 +71,7 @@ export class IntelligenceService {
 
     let name = id;
     if (isSession) {
-      name = `Recorded Session #${id.split('_').pop()?.substring(0, 4) || id}`;
+      name = `Recorded Session #${id.split('_').pop()?.slice(-4) || id}`;
     } else {
       const workflows = await this.dbService.getWorkflows();
       const wf = workflows.find(w => w.id === id);

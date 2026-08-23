@@ -407,7 +407,7 @@ router.get('/dashboard', async (req, res) => {
       if (sess.eventCount > 0) {
         const score = Math.min(99, Math.floor((sess.eventCount * 2) + (sess.durationInSeconds / 60)));
         const data = {
-          name: `Recorded Session #${sess.id.split('_').pop()?.substring(0, 4) || sess.id}`,
+          name: `Recorded Session #${sess.id.split('_').pop()?.slice(-4) || sess.id}`,
           targetWorkflowId: sess.id,
           score,
           status: sess.status === 'Recording' ? 'Observing...' : (score > 40 ? 'Ready' : 'Building'),
