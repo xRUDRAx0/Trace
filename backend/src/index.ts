@@ -29,6 +29,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.get('/', (req, res) => {
+  res.redirect('https://frontend-iota-one-86.vercel.app');
+});
+
 io.on('connection', (socket) => {
   console.log('Client connected to Socket.IO', socket.id);
 
