@@ -1,0 +1,66 @@
+{
+  "workflows": [],
+  "sessions": [],
+  "events": [],
+  "automations": [
+    {
+      "id": "auto_demo_sales",
+      "name": "Weekly Sales Report",
+      "workflowId": "wf_demo",
+      "trigger": {
+        "type": "manual"
+      },
+      "status": "Approved",
+      "steps": [
+        {
+          "type": "receive_weekly_sales_email"
+        },
+        {
+          "type": "download_sales_csv"
+        },
+        {
+          "type": "open_spreadsheet"
+        },
+        {
+          "type": "clean_invalid_rows"
+        },
+        {
+          "type": "calculate_total_sales"
+        },
+        {
+          "type": "calculate_average_order_value"
+        },
+        {
+          "type": "update_management_report"
+        },
+        {
+          "type": "generate_summary"
+        },
+        {
+          "type": "human_approval",
+          "originalAction": "send_summary"
+        }
+      ]
+    }
+  ],
+  "executions": [],
+  "settings": {
+    "active": false
+  },
+  "activeSessionId": null,
+  "cachedAiAnalysis": {
+    "workflowName": "Unknown",
+    "summary": "No data available for analysis.",
+    "whyAutomate": "N/A",
+    "automationPotential": 0,
+    "recommendedAction": "Record more sessions to gather data.",
+    "estimatedTimeSaving": "0 min",
+    "confidence": 0,
+    "insights": [],
+    "automationPlan": {
+      "steps": [],
+      "humanApprovalSteps": [],
+      "reasoning": "No data to automate."
+    }
+  }
+}

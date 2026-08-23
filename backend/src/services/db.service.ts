@@ -123,15 +123,56 @@ const demoSalesAutomation: AutomationPlan = {
   ]
 };
 
-// Local In-Memory Fallback
-const memoryWorkflows: Workflow[] = [];
-const memorySessions: ObservationSession[] = [];
-const memoryEvents: WorkflowEvent[] = [];
-const memoryAutomations: AutomationPlan[] = [demoSalesAutomation];
-const memoryExecutions: ExecutionRun[] = [];
+import fs from 'fs';
+import path from 'path';
+
+// Local In-Memory Fallback with JSON persistence
+const DB_FILE = path.join(process.cwd(), 'local_db.json');
+
+let memoryWorkflows: Workflow[] = [];
+let memorySessions: ObservationSession[] = [];
+let memoryEvents: WorkflowEvent[] = [];
+let memoryAutomations: AutomationPlan[] = [demoSalesAutomation];
+let memoryExecutions: ExecutionRun[] = [];
 let observationSettings = { active: false };
 let activeSessionId: string | null = null;
 let cachedAiAnalysis: AiAnalysisResult | null = null;
+
+// Load from disk
+try {
+  if (fs.existsSync(DB_FILE)) {
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    memoryWorkflows = data.workflows || [];
+    memorySessions = data.sessions || [];
+    memoryEvents = data.events || [];
+    memoryAutomations = data.automations || [demoSalesAutomation];
+    memoryExecutions = data.executions || [];
+    observationSettings = data.settings || { active: false };
+    activeSessionId = data.activeSessionId || null;
+    cachedAiAnalysis = data.cachedAiAnalysis || null;
+  }
+} catch (e) {
+  console.error("Failed to load local DB", e);
+}
+
+// Save to disk helper
+const saveLocalDB = () => {
+  if (useFirestore) return;
+  try {
+    fs.writeFileSync(DB_FILE, JSON.stringify({
+      workflows: memoryWorkflows,
+      sessions: memorySessions,
+      events: memoryEvents,
+      automations: memoryAutomations,
+      executions: memoryExecutions,
+      settings: observationSettings,
+      activeSessionId,
+      cachedAiAnalysis
+    }, null, 2));
+  } catch (e) {
+    console.error("Failed to save local DB", e);
+  }
+};
 
 export class DbService {
   async saveWorkflow(workflow: Workflow): Promise<void> {
@@ -139,6 +180,7 @@ export class DbService {
       await admin.firestore().collection('workflows').doc(workflow.id).set(workflow);
     } else {
       memoryWorkflows.push(workflow);
+      saveLocalDB();
     }
   }
 
@@ -157,6 +199,7 @@ export class DbService {
       const idx = memorySessions.findIndex(s => s.id === session.id);
       if (idx >= 0) memorySessions[idx] = session;
       else memorySessions.push(session);
+      saveLocalDB();
     }
   }
 
@@ -194,6 +237,7 @@ export class DbService {
       await batch.commit();
     } else {
       memoryEvents.push(...events);
+      saveLocalDB();
     }
   }
 
@@ -225,6 +269,7 @@ export class DbService {
       const idx = memoryAutomations.findIndex(a => a.id === plan.id);
       if (idx >= 0) memoryAutomations[idx] = plan;
       else memoryAutomations.push(plan);
+      saveLocalDB();
     }
   }
 
@@ -251,6 +296,7 @@ export class DbService {
       const idx = memoryExecutions.findIndex(e => e.runId === run.runId);
       if (idx >= 0) memoryExecutions[idx] = run;
       else memoryExecutions.push(run);
+      saveLocalDB();
     }
   }
 
@@ -306,6 +352,7 @@ export class DbService {
       return;
     }
     observationSettings = settings;
+    saveLocalDB();
   }
 
   async saveAiAnalysis(analysis: AiAnalysisResult): Promise<void> {
@@ -313,6 +360,7 @@ export class DbService {
     if (useFirestore) {
       await admin.firestore().collection('settings').doc('ai_analysis').set(analysis);
     }
+    saveLocalDB();
   }
 
   async getAiAnalysis(): Promise<AiAnalysisResult | null> {
