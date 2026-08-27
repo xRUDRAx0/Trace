@@ -73,6 +73,6 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`TRACE backend running on port ${PORT}`);
+server.listen(Number(PORT), '0.0.0.0', () => {
+  console.log(`TRACE backend running on port ${PORT} (0.0.0.0)`);
 });
