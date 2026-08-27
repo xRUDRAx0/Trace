@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bot, Check, Settings, PlayCircle, ShieldCheck, Save, ArrowLeft } from 'lucide-react';
+import { API_URL } from '../config';
 
 interface AutomationStep {
   type?: string;
@@ -34,7 +35,7 @@ export default function Builder() {
   useEffect(() => {
     if (!planId) return;
     
-    fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/automations/${planId}`)
+    fetch(`${API_URL}/api/automations/${planId}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) setPlan(data.plan);
@@ -47,7 +48,7 @@ export default function Builder() {
     if (!planId) return;
     setSaving(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/automations/${planId}/approve`, {
+      const res = await fetch(`${API_URL}/api/automations/${planId}/approve`, {
         method: 'POST'
       });
       const data = await res.json();

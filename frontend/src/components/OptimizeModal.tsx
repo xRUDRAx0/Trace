@@ -52,7 +52,7 @@ export default function OptimizeModal({ insight, onClose }: OptimizeModalProps) 
                <div className="w-12 h-12 rounded-full border-4 border-info/20 border-t-info animate-spin"></div>
                <div>
                  <h3 className="text-lg font-bold text-text-primary">Analyzing Workflow Friction...</h3>
-                 <p className="text-sm text-text-secondary mt-1">WorkTwin AI is generating custom optimization strategies based on your observed behavior.</p>
+                 <p className="text-sm text-text-secondary mt-1">TRACE AI is generating custom optimization strategies based on your observed behavior.</p>
                </div>
             </div>
           ) : (
@@ -97,7 +97,7 @@ export default function OptimizeModal({ insight, onClose }: OptimizeModalProps) 
                        <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
                        <div>
                          <h4 className="text-sm font-bold text-text-primary">Create a Custom Macro</h4>
-                         <p className="text-xs text-text-secondary mt-1">If this UI sequence is required and cannot be fully automated in the background, consider creating a simple keyboard macro using WorkTwin's desktop assistant to replay these clicks instantly.</p>
+                         <p className="text-xs text-text-secondary mt-1">If this UI sequence is required and cannot be fully automated in the background, consider creating a simple keyboard macro using TRACE's desktop assistant to replay these clicks instantly.</p>
                        </div>
                     </div>
                   </>
@@ -106,7 +106,7 @@ export default function OptimizeModal({ insight, onClose }: OptimizeModalProps) 
                      <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
                      <div>
                        <h4 className="text-sm font-bold text-text-primary">Standardize the Workflow</h4>
-                       <p className="text-xs text-text-secondary mt-1">Try to perform these steps in the exact same sequence every time. Once WorkTwin detects 100% sequence predictability, it will unlock full background automation for this task.</p>
+                       <p className="text-xs text-text-secondary mt-1">Try to perform these steps in the exact same sequence every time. Once TRACE detects 100% sequence predictability, it will unlock full background automation for this task.</p>
                      </div>
                   </div>
                 )}

@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
+import { API_URL, SOCKET_URL } from '../config';
 
 interface ObservationContextType {
   isActive: boolean;
@@ -21,7 +22,7 @@ export function ObservationProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     // Initial fetch of settings
-    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/settings/observation')
+    fetch(`${API_URL}/api/settings/observation`)
       .then(res => res.json())
       .then(data => {
         setIsActive(data.active);
@@ -34,14 +35,14 @@ export function ObservationProvider({ children }: { children: React.ReactNode })
       });
 
     // Setup Socket.IO
-    const newSocket = io((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '');
+    const newSocket = io(SOCKET_URL);
     setSocket(newSocket);
 
     newSocket.on('observation_status', (data) => {
       setIsActive(data.active);
       setCurrentSessionId(data.sessionId || null);
-      if (!data.active) {
-        setLiveEvents([]); // Clear live events on stop so they don't leak to next session
+      if (data.active && data.sessionId !== currentSessionId) {
+        setLiveEvents([]); // Clear live events on new session start
       }
     });
 
@@ -65,7 +66,7 @@ export function ObservationProvider({ children }: { children: React.ReactNode })
     setIsActive(newState); // Optimistic UI update
     
     try {
-      await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/settings/observation', {
+      await fetch(`${API_URL}/api/settings/observation`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ active: newState })

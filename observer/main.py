@@ -1,3 +1,4 @@
+import os
 import time
 import uuid
 import win32gui
@@ -114,32 +115,38 @@ def on_click(x, y, button, pressed):
 
     try:
         process_name, window_title = get_active_window_info()
-        element_name, element_type, element_value = get_ui_element_info(x, y)
-        
-        # Format the application name gracefully
         app_name = process_name.replace('.exe', '').replace('.EXE', '').capitalize()
-        
-        if not element_name or element_name == "Unknown Element" or "UI element information unavailable" in element_name:
-            element_name = ""
 
+        # Build and emit the event immediately with available basic data
+        # This guarantees the click is never lost, even if UI element lookup fails
         event = {
             "id": str(uuid.uuid4()),
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "application": app_name,
             "windowTitle": window_title,
             "action": "click",
-            "elementName": element_name,
-            "elementType": element_type,
+            "elementName": "",
+            "elementType": "Unknown",
             "x": x,
             "y": y,
             "sessionId": current_session_id,
             "metadata": {
-                "elementValue": element_value
+                "elementValue": ""
             }
         }
-        
-        print(f"Captured: {app_name} | {window_title} | {element_name}")
-        
+
+        # Now try to enrich with UI element name (best-effort, won't block emit)
+        try:
+            element_name, element_type, element_value = get_ui_element_info(x, y)
+            if element_name and element_name != "Unknown Element":
+                event["elementName"] = element_name
+            event["elementType"] = element_type
+            event["metadata"]["elementValue"] = element_value
+        except Exception as ui_err:
+            pass  # Fine — we already have the basic event ready
+
+        print(f"Captured: {app_name} | {window_title} | {event['elementName'] or f'({x},{y})'}")
+
         # Emit to backend
         sio.emit('new_event', event)
 
@@ -234,11 +241,11 @@ def on_release(key):
 
 @sio.event
 def connect():
-    print("Connected to WorkTwin Backend!")
+    print("Connected to TRACE Backend!")
 
 @sio.event
 def disconnect():
-    print("Disconnected from WorkTwin Backend.")
+    print("Disconnected from TRACE Backend.")
 
 @sio.on('observation_status')
 def on_observation_status(data):
@@ -271,15 +278,38 @@ def on_observation_status(data):
             current_session_id = None
 
 def main():
-    print("Starting WorkTwin Local Observer Agent...")
+    print("Starting TRACE Local Observer Agent...")
     try:
-        # Connect to Node.js backend
-        backend_url = "http://localhost:3001"
+        # Resolve backend URL from:
+        # 1. Command-line argument
+        # 2. SOCKET_SERVER_URL environment variable
+        # 3. .env file in observer directory
+        # 4. Default fallback: http://localhost:3001
         import sys
+        backend_url = None
         if len(sys.argv) > 1:
             backend_url = sys.argv[1]
         
-        print(f"Connecting to backend at {backend_url}...")
+        if not backend_url:
+            backend_url = os.environ.get("SOCKET_SERVER_URL")
+
+        if not backend_url:
+            env_path = os.path.join(os.path.dirname(__file__), ".env")
+            if os.path.exists(env_path):
+                try:
+                    with open(env_path, "r") as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith("SOCKET_SERVER_URL="):
+                                backend_url = line.split("=", 1)[1].strip().strip('"').strip("'")
+                                break
+                except Exception:
+                    pass
+
+        if not backend_url:
+            backend_url = "http://localhost:3001"
+        
+        print(f"Connecting to TRACE backend at {backend_url}...")
         sio.connect(backend_url)
         print("Waiting for observation commands...")
         

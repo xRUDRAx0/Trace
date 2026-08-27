@@ -1,6 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { PlayCircle, ShieldCheck, CheckCircle2, Clock, RotateCw, XCircle, ArrowLeft, Bot, AlertTriangle } from 'lucide-react';
+import { io } from 'socket.io-client';
+import { API_URL, SOCKET_URL } from '../config';
 
 interface StepResult {
   step: string;
@@ -22,39 +24,54 @@ export default function Execution() {
   const navigate = useNavigate();
   const [run, setRun] = useState<ExecutionRun | null>(null);
   const [loading, setLoading] = useState(true);
+  const runStatusRef = useRef<string | null>(null);
 
-  // Poll for execution status
+  const fetchRun = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/executions/${runId}`);
+      const data = await res.json();
+      if (data.success) {
+        setRun(data.run);
+        runStatusRef.current = data.run.status;
+      }
+    } catch (e) {
+      console.error('Failed to poll run', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Poll every second — stops automatically when completed/failed
   useEffect(() => {
     if (!runId) return;
-
-    const fetchRun = async () => {
-      try {
-        const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/executions/${runId}`);
-        const data = await res.json();
-        if (data.success) {
-          setRun(data.run);
-        }
-      } catch (e) {
-        console.error('Failed to poll run', e);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchRun();
     const interval = setInterval(() => {
-      if (run?.status !== 'Completed' && run?.status !== 'Failed') {
+      if (runStatusRef.current !== 'Completed' && runStatusRef.current !== 'Failed') {
+        fetchRun();
+      } else {
+        clearInterval(interval);
+      }
+    }, 800);
+    return () => clearInterval(interval);
+  }, [runId]);
+
+  // Also listen to socket events so updates are instant (not just on next poll tick)
+  useEffect(() => {
+    if (!runId) return;
+    const socket = io(SOCKET_URL);
+    socket.on('run_update', (data: { runId: string; status: string }) => {
+      // Only react to updates for our specific run
+      if (data.runId === runId) {
         fetchRun();
       }
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [runId, run?.status]);
+    });
+    return () => { socket.disconnect(); };
+  }, [runId]);
 
   const handleApprove = async () => {
     if (!runId) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/executions/${runId}/approve`, { method: 'POST' });
+      await fetch(`${API_URL}/api/executions/${runId}/approve`, { method: 'POST' });
     } catch (e) {
       alert('Failed to approve step');
     }
@@ -68,7 +85,7 @@ export default function Execution() {
   const handleCancel = async () => {
     if (!runId) return;
     try {
-      await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/executions/${runId}/cancel`, { method: 'POST' });
+      await fetch(`${API_URL}/api/executions/${runId}/cancel`, { method: 'POST' });
     } catch (e) {
       alert('Failed to cancel execution');
     }
@@ -141,12 +158,12 @@ export default function Execution() {
                         <div>
                           {run.context?.summaryText ? (
                             <>
-                              <p className="font-bold text-text-primary mb-1">WorkTwin wants to {actionName?.replace('_', ' ').toLowerCase()}</p>
+                              <p className="font-bold text-text-primary mb-1">TRACE wants to {actionName?.replace('_', ' ').toLowerCase()}</p>
                               <p className="text-sm text-text-secondary whitespace-pre-line leading-relaxed">{run.context.summaryText}</p>
                             </>
                           ) : (
                             <p className="font-medium text-text-primary">
-                              WorkTwin wants to {actionName?.replace('_', ' ').toLowerCase()}.
+                              TRACE wants to {actionName?.replace('_', ' ').toLowerCase()}.
                             </p>
                           )}
                         </div>

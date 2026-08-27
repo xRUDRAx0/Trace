@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
+import Home from './pages/Home';
 import Recorder from './pages/Recorder';
 import ActivityPage from './pages/Activity';
 import Workflows from './pages/Workflows';
@@ -23,7 +24,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/dashboard" replace />} />
+              <Route index element={<Home />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="activity" element={<ActivityPage />} />
               <Route path="workflows" element={<Workflows />} />

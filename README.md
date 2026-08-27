@@ -1,206 +1,226 @@
-<div align="center">
+# ⚡ TRACE — AI-Powered Workspace Automation
 
-# 🤖 WORKTWIN
+> **Silent Workflow Observation, Friction Analytics, and Autonomous Browser Execution**
 
-### Your AI Work Partner
-
-**"Stop repeating yourself. Let WorkTwin do the heavy lifting."**
-
-[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-worktwin.local-1a56db?style=for-the-badge)](#)
-[![React](https://img.shields.io/badge/React-19-61dafb?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
-[![Node.js](https://img.shields.io/badge/Node.js-20-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org)
-[![Playwright](https://img.shields.io/badge/Playwright-1.4-45ba4b?style=for-the-badge&logo=Playwright&logoColor=white)](https://playwright.dev)
-[![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![Gemini AI](https://img.shields.io/badge/Gemini_AI-Pro-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://deepmind.google/technologies/gemini/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4-06b6d4?style=for-the-badge&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-
-<br/>
-
-<p align="center">
-  <img src="https://img.icons8.com/color/400/000000/bot.png" alt="WorkTwin Hero" width="200"/>
-</p>
-
-<br/>
-
-> **WorkTwin** is an AI-powered workspace automation tool that silently observes your desktop workflows, analyzes inefficiencies, and autonomously executes optimizations using Google Gemini and Playwright — acting as your personalized digital twin.
-
-</div>
+TRACE observes everyday desktop tasks, detects repetitive patterns and friction points, leverages Google Gemini AI to plan deterministic workflows, and autonomously executes automations using Playwright.
 
 ---
 
-## 📖 Table of Contents
-
-- [The Problem](#-the-problem)
-- [Our Solution](#-our-solution)
-- [Core Pipeline](#-core-pipeline)
-- [Key Features](#-key-features)
-- [Architecture](#-architecture)
-- [Getting Started](#-getting-started)
-- [License](#-license)
-
----
-
-## 🔴 The Problem
-
-Knowledge workers spend countless hours on highly repetitive, copy-paste tasks, yet:
-
-- **40%** of a typical workday is spent on manual data entry and context switching.
-- **Traditional RPA** (Robotic Process Automation) requires complex programming and rigid selectors.
-- Most users **don't know** exactly *what* they should automate until they see the analytics.
-- Small friction points (like switching between 4 apps to complete one task) silently drain productivity.
-
-> There is no simple tool that *watches* how you work and *automatically* builds the robot for you.
-
----
-
-## 💡 Our Solution
-
-**WorkTwin** acts as an intelligent digital twin that bridges observation and execution:
+## 🏛️ Architecture Overview
 
 ```
-   👤 Human Worker
-         │
-         ▼
-   ┌─────────────┐
-   │  WORKTWIN   │──── "Let me do that for you"
-   │  AI Agent   │
-   └──────┬──────┘
-          │
-    ┌─────┼─────┬─────────┬──────────┐
-    ▼     ▼     ▼         ▼          ▼
- Observe  Detect   Analyze    Plan     Execute
- (Python) (Engine) (Gemini)  (Steps) (Playwright)
+ ┌────────────────────────────────────────────────────────┐
+ │                    USER WORKSTATION                    │
+ │                                                        │
+ │   ┌──────────────────────┐    ┌────────────────────┐   │
+ │   │  TRACE Desktop App   │    │   Python Desktop   │   │
+ │   │    (React + Vite)    │    │      Observer      │   │
+ │   └──────────┬───────────┘    └─────────┬──────────┘   │
+ └──────────────┼──────────────────────────┼──────────────┘
+                │ REST / WebSocket         │ Socket.IO (Events)
+                ▼                          ▼
+ ┌────────────────────────────────────────────────────────┐
+ │                   TRACE CLOUD BACKEND                  │
+ │                 (Node.js + Express + WS)               │
+ │                                                        │
+ │   ├── REST API & Real-time Socket.IO Gateway           │
+ │   ├── Pattern Detection & Behavioral Analytics         │
+ │   ├── Playwright Browser Execution Engine              │
+ │   └── Storage Layer (In-Memory / Firestore Cloud)      │
+ └──────────────────────┬─────────────────────────────────┘
+                        │ HTTPS
+                        ▼
+ ┌────────────────────────────────────────────────────────┐
+ │                   GOOGLE GEMINI AI                     │
+ │          Semantic Workflow Analysis & Planning         │
+ └────────────────────────────────────────────────────────┘
 ```
 
-Instead of writing scripts, you simply **do your job normally**, and WorkTwin:
-
-1. **Observes** your actions semantically (UI elements, text, URLs).
-2. **Detects** repetitive workflow patterns automatically.
-3. **Analyzes** friction, ROI, and time saved using AI.
-4. **Plans** a deterministic automation script.
-5. **Executes** the task on your behalf in a live browser.
+### Component Roles
+1. **Frontend (`/frontend`)**: Responsive, high-performance UI (React 19, Tailwind CSS, Recharts) providing real-time dashboard analytics, session observation controls, workflow visualization, approval checkpoints, and live Playwright execution tracking.
+2. **Backend (`/backend`)**: Express.js & Socket.IO server powering event aggregation, workflow pattern clustering, Google Gemini AI analysis, and autonomous Playwright automation.
+3. **Desktop Observer (`/observer`)**: Lightweight Python client running locally on the user's workstation using `pynput` and `win32gui` to capture user actions across desktop apps and emit telemetry to the backend.
 
 ---
 
-## 🔄 Core Pipeline
+## 📋 Prerequisites
 
-```mermaid
-flowchart LR
-    A["👁️ Desktop Observer<br/><i>Tracks clicks, typing,<br/>app context, keys</i>"] --> B["🧠 Intelligence Engine<br/><i>Detects patterns &<br/>calculates friction</i>"]
-    B --> C["🤖 Gemini AI<br/><i>Generates semantic<br/>automation plan</i>"]
-    C --> D["📊 Opportunity Dashboard<br/><i>Displays ROI &<br/>Time Saved</i>"]
-    D --> E["⚡ Execution Engine<br/><i>Live browser<br/>automation</i>"]
-    E --> F["📋 Activity Tracker<br/><i>Real-time execution<br/>monitoring</i>"]
-
-    style A fill:#e8eeff,stroke:#1a56db,color:#111
-    style B fill:#fef3c7,stroke:#f59e0b,color:#111
-    style C fill:#dcfce7,stroke:#16a34a,color:#111
-    style D fill:#fce7f3,stroke:#ec4899,color:#111
-    style E fill:#e8eeff,stroke:#1a56db,color:#111
-    style F fill:#f3e8ff,stroke:#8b5cf6,color:#111
-```
+- **Node.js**: v18.0.0 or higher (v20+ recommended)
+- **Python**: v3.10 or higher (Windows recommended for native desktop window inspection)
+- **Google Gemini API Key**: [Get a Gemini API key](https://aistudio.google.com/) *(optional — deterministic fallback available if omitted)*
 
 ---
 
-## ✨ Key Features
+## ⚙️ Environment Variables
 
-### 👁️ Semantic Observation
-Not just X/Y coordinates. The Python observer maps real UI elements, application names, and window titles, allowing WorkTwin to understand *what* you are doing, not just *where* your mouse is.
-
-### 🧠 Intelligent Workflow Detection
-Groups raw events into structured sessions and identifies repetitive workflows. Calculates a **Friction Score** based on app switching, rework, and copy-paste operations.
-
-### 🤖 Gemini-Powered Automation
-Passes workflow telemetry to Google Gemini to deduce intent. Gemini extracts URLs, maps semantic targets, and outputs a deterministic JSON automation plan.
-
-### ⚡ Autonomous Playwright Execution
-A robust execution engine that takes the AI's semantic plan and brings it to life. It auto-initializes a Chromium browser, navigates to targets, and elegantly handles missing targets or dynamic wait times.
-
-### 📊 Beautiful ROI Dashboard
-Visualize your productivity. See your top automation opportunities ranked by estimated time savings and friction reduction, complete with a beautifully crafted dark-mode React interface.
-
----
-
-## 🏗️ Architecture
-
-### System Architecture
-
-```mermaid
-graph TB
-    subgraph Client["🖥️ Client — React + Vite"]
-        subgraph AppShell["📱 App Shell"]
-            Dashboard["ROI Dashboard"]
-            Activity["Live Event Stream"]
-            Workflows["Pattern Detection"]
-            ExecutionUI["Live Execution Viewer"]
-        end
-    end
-
-    subgraph Server["⚙️ Node.js Backend"]
-        REST["Express API"]
-        WS["Socket.IO Server"]
-        Execution["Playwright Engine"]
-        Intelligence["Pattern Service"]
-    end
-
-    subgraph Agent["🤖 Python Observer"]
-        PyWin["pywin32 / pynput"]
-        UIAuto["uiautomation"]
-    end
-    
-    subgraph Cloud["☁️ Cloud Services"]
-        Gemini["Google Gemini API"]
-        Firebase["Firestore DB (Optional)"]
-    end
-
-    Agent -- "Socket.IO (Raw Events)" --> WS
-    AppShell -- "REST" --> REST
-    AppShell -- "Socket.IO (Live Status)" --> WS
-    REST -- "Telemetry" --> Gemini
-    REST -- "Save/Load" --> Firebase
-    Execution -- "Browser Control" --> Client
-
-    style Client fill:#f8faff,stroke:#1a56db
-    style Server fill:#fef3c7,stroke:#f59e0b
-    style Agent fill:#dcfce7,stroke:#16a34a
-    style Cloud fill:#f3e8ff,stroke:#8b5cf6
-```
-
----
-
-## ⚙️ Getting Started
-
-### Prerequisites
-- Node.js v18+
-- Python 3.11+ (Windows recommended for full UI tracking)
-- Google Gemini API Key
-
-### 1. Setup Backend
+### 1. Backend (`backend/.env`)
+Copy `backend/.env.example` to `backend/.env`:
 ```bash
+cp backend/.env.example backend/.env
+```
+
+| Variable | Description | Default (Local) |
+|---|---|---|
+| `PORT` | Server listening port | `3001` |
+| `CLIENT_URL` | Allowed frontend client URL for CORS | `http://localhost:5173` |
+| `SOCKET_CORS_ORIGIN` | Allowed Socket.IO origin (comma-separated or single URL) | `http://localhost:5173` |
+| `GEMINI_API_KEY` | Google Gemini API key | *(Optional)* |
+| `FIREBASE_SERVICE_ACCOUNT` | JSON string or path to Firebase service account | *(Optional)* |
+| `PLAYWRIGHT_HEADLESS` | Force headless browser execution (`true`/`false`) | `false` (local), `true` (prod) |
+
+### 2. Frontend (`frontend/.env`)
+Copy `frontend/.env.example` to `frontend/.env`:
+```bash
+cp frontend/.env.example frontend/.env
+```
+
+| Variable | Description | Default (Local) |
+|---|---|---|
+| `VITE_API_URL` | TRACE backend REST API base URL | `http://localhost:3001` |
+| `VITE_SOCKET_URL` | TRACE backend Socket.IO base URL | `http://localhost:3001` |
+
+### 3. Python Observer (`observer/.env`)
+Copy `observer/.env.example` to `observer/.env`:
+```bash
+cp observer/.env.example observer/.env
+```
+
+| Variable | Description | Default (Local) |
+|---|---|---|
+| `SOCKET_SERVER_URL` | Target TRACE backend URL for telemetry | `http://localhost:3001` |
+
+---
+
+## 🚀 Local Development Setup
+
+### Step 1: Install Dependencies
+
+```bash
+# Install backend dependencies
 cd backend
 npm install
-# Create a .env file with GEMINI_API_KEY=your_key
-npm run dev
+npx playwright install chromium
+
+# Install frontend dependencies
+cd ../frontend
+npm install
+
+# Install observer dependencies in a virtual environment
+cd ../observer
+python -m venv venv
+# On Windows:
+.\venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-### 2. Setup Frontend
+### Step 2: Run the Services
+
+Open **three terminal windows**:
+
+**Terminal 1 — Backend:**
+```bash
+cd backend
+npm run dev
+```
+*Backend runs on `http://localhost:3001`*
+
+**Terminal 2 — Frontend:**
 ```bash
 cd frontend
-npm install
 npm run dev
 ```
+*Frontend runs on `http://localhost:5173`*
 
-### 3. Setup Observer
+**Terminal 3 — Observer:**
 ```bash
 cd observer
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
+# Ensure virtual environment is activated
 python main.py
+```
+*Observer connects to `http://localhost:3001` and awaits observation start.*
+
+---
+
+## 🌐 Production Deployment
+
+TRACE is designed for straightforward cloud deployment with a separated desktop agent:
+
+| Component | Target Hosting | Notes |
+|---|---|---|
+| **Backend & Playwright** | [Railway](https://railway.app) / [Render](https://render.com) | Node.js container with Chromium support |
+| **Frontend** | [Vercel](https://vercel.com) / [Railway](https://railway.app) | Static SPA deployment |
+| **Observer** | **User's Local Machine** | Runs on workstation to observe desktop apps |
+
+### 1. Deploy Backend (e.g. Railway / Render)
+
+1. Connect your GitHub repository to Railway.
+2. Select the `/backend` subdirectory as the root directory.
+3. Configure build and start commands:
+   - **Build Command**: `npm install && npx playwright install --with-deps chromium`
+   - **Start Command**: `npm start`
+4. Set Environment Variables in the cloud dashboard:
+   - `PORT`: (Auto-assigned by host, e.g. `3001` or `8080`)
+   - `CLIENT_URL`: `https://your-trace-frontend.vercel.app`
+   - `SOCKET_CORS_ORIGIN`: `https://your-trace-frontend.vercel.app`
+   - `GEMINI_API_KEY`: `your_gemini_api_key`
+   - `PLAYWRIGHT_HEADLESS`: `true`
+5. Verify deployment:
+   - Health check: `GET https://your-trace-backend.up.railway.app/health`
+   - Response: `{"status":"ok","service":"trace"}`
+
+### 2. Deploy Frontend (e.g. Vercel)
+
+1. Import the repository on Vercel.
+2. Set the Root Directory to `frontend`.
+3. Set Environment Variables in Vercel project settings:
+   - `VITE_API_URL`: `https://your-trace-backend.up.railway.app`
+   - `VITE_SOCKET_URL`: `https://your-trace-backend.up.railway.app`
+4. Deploy. Vercel automatically detects Vite and uses the included `vercel.json` rewrite configuration for seamless SPA routing.
+
+### 3. Run Observer on User Machine
+
+The observer **must run locally on the client's PC** because browser/server sandboxes cannot capture system-wide operating system mouse/keyboard events.
+
+1. Configure `observer/.env`:
+   ```env
+   SOCKET_SERVER_URL=https://your-trace-backend.up.railway.app
+   ```
+   *(Or pass the URL as a CLI argument: `python main.py https://your-trace-backend.up.railway.app`)*
+2. Run:
+   ```bash
+   python main.py
+   ```
+3. Open your deployed TRACE web app, click **Start Observing** on the Activity or Dashboard page, and work normally!
+
+---
+
+## 🛠️ Verification & Health Check
+
+The backend includes a health endpoint for automated uptime monitoring and container probes:
+
+```http
+GET /health
+```
+Response:
+```json
+{
+  "status": "ok",
+  "service": "trace"
+}
 ```
 
 ---
 
-## 📜 License
+## 🛡️ Security & Privacy
 
-Distributed under the MIT License. See `LICENSE` for more information.
+- **No Secrets in Repo**: All API keys, service accounts, and database credentials are managed exclusively through environment variables.
+- **CORS Protection**: Explicit origin validation on both Express HTTP endpoints and Socket.IO connections.
+- **Configurable Persistence**: Zero-configuration local development storage with optional Firestore enterprise encryption.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License.

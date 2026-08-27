@@ -1,388 +1,390 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, Layers, Clock, Zap, FileText, Database, Trash2, ArrowRight, Star, MoreVertical } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import InspectModal from '../components/InspectModal';
-import EvidenceModal from '../components/EvidenceModal';
+import { Activity, Layers, Clock, Zap, FileText, Database, ArrowRight, Bot } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { useObservation } from '../context/ObservationContext';
+import TraceLogo from '../components/TraceLogo';
+import { API_URL } from '../config';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState<any>(null);
+  const [events, setEvents] = useState<any[]>([]);
+  const [runs, setRuns] = useState<any[]>([]);
+  const [automations, setAutomations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedEvent, setSelectedEvent] = useState<any>(null);
-  const [evidenceEvents, setEvidenceEvents] = useState<any[] | null>(null);
   const [timeFilter, setTimeFilter] = useState('This Week');
+  const [isGenerating, setIsGenerating] = useState(false);
   const { liveEvents, isActive } = useObservation();
 
   useEffect(() => {
-    fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/dashboard')
-      .then(res => res.json())
-      .then(d => {
-        setData(d);
-        setLoading(false);
-      })
-      .catch(e => {
-        console.error('Failed to load dashboard data', e);
-        setLoading(false);
-      });
+    Promise.all([
+      fetch(`${API_URL}/api/dashboard`).then(r => r.json()),
+      fetch(`${API_URL}/api/events`).then(r => r.json()),
+      fetch(`${API_URL}/api/automations/runs`).then(r => r.json()),
+      fetch(`${API_URL}/api/automations`).then(r => r.json())
+    ]).then(([d, e, r, a]) => {
+      setData(d);
+      setEvents(Array.isArray(e) ? e : []);
+      setRuns(Array.isArray(r) ? r : []);
+      setAutomations(Array.isArray(a) ? a : []);
+      setLoading(false);
+    }).catch(e => {
+      console.error('Failed to load dashboard data', e);
+      setLoading(false);
+    });
   }, [liveEvents.length, isActive]);
 
+  // Combine saved events with live events
+  const allEvents = useMemo(() => {
+    const liveEventIds = new Set(liveEvents.map(e => e.id));
+    const filteredSaved = events.filter(e => !liveEventIds.has(e.id));
+    return [...filteredSaved, ...liveEvents];
+  }, [events, liveEvents]);
+
+  const {
+    activitiesToday, activitiesYesterday,
+    workflowsDetected, workflowsYesterday,
+    timeSavedMs, timeSavedPreviousMs,
+    runsCount, runsPreviousCount,
+    chartData, recentActivity
+  } = useMemo(() => {
+    const now = new Date();
+    
+    const isToday = (d: Date) => d.toDateString() === now.toDateString();
+    const isYesterday = (d: Date) => {
+      const y = new Date(now);
+      y.setDate(now.getDate() - 1);
+      return d.toDateString() === y.toDateString();
+    };
+    const isThisWeek = (d: Date) => {
+      const start = new Date(now);
+      start.setDate(now.getDate() - now.getDay());
+      start.setHours(0,0,0,0);
+      return d >= start;
+    };
+    const isLastWeek = (d: Date) => {
+      const start = new Date(now);
+      start.setDate(now.getDate() - now.getDay() - 7);
+      start.setHours(0,0,0,0);
+      const end = new Date(now);
+      end.setDate(now.getDate() - now.getDay() - 1);
+      end.setHours(23,59,59,999);
+      return d >= start && d <= end;
+    };
+    const isThisMonth = (d: Date) => d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    const isLastMonth = (d: Date) => {
+      const lm = new Date(now);
+      lm.setMonth(now.getMonth() - 1);
+      return d.getMonth() === lm.getMonth() && d.getFullYear() === lm.getFullYear();
+    };
+
+    const isInPeriod = (dateStr: string, period: string) => {
+      const d = new Date(dateStr);
+      if (period === 'Today') return isToday(d);
+      if (period === 'This Week') return isThisWeek(d);
+      if (period === 'This Month') return isThisMonth(d);
+      return true;
+    };
+
+    const isInPreviousPeriod = (dateStr: string, period: string) => {
+      const d = new Date(dateStr);
+      if (period === 'Today') return isYesterday(d);
+      if (period === 'This Week') return isLastWeek(d);
+      if (period === 'This Month') return isLastMonth(d);
+      return false;
+    };
+
+    const getRunTimeSaved = (run: any) => {
+      if (run.status !== 'completed' || !run.endTime) return 0;
+      const runDuration = new Date(run.endTime).getTime() - new Date(run.startTime).getTime();
+      
+      const auto = automations.find(a => a.id === run.automationId);
+      if (auto && data?.detectedWorkflows) {
+        const wf = data.detectedWorkflows.find((w: any) => w.targetWorkflowId === auto.targetWorkflowId);
+        if (wf && wf.averageDurationSeconds) {
+           const saved = (wf.averageDurationSeconds * 1000) - runDuration;
+           return saved > 0 ? saved : 0;
+        }
+      }
+      return runDuration * 2; 
+    };
+
+    const activitiesTodayCount = allEvents.filter(e => isToday(new Date(e.timestamp))).length;
+    const activitiesYesterdayCount = allEvents.filter(e => isYesterday(new Date(e.timestamp))).length;
+
+    const workflowsDetectedCount = data?.workflowsDetected || 0;
+    
+    const periodRuns = runs.filter(r => isInPeriod(r.startTime, timeFilter));
+    const previousRuns = runs.filter(r => isInPreviousPeriod(r.startTime, timeFilter));
+
+    const runsCountVal = periodRuns.length;
+    const runsPreviousCountVal = previousRuns.length;
+
+    const timeSavedMsVal = periodRuns.reduce((acc, r) => acc + getRunTimeSaved(r), 0);
+    const timeSavedPreviousMsVal = previousRuns.reduce((acc, r) => acc + getRunTimeSaved(r), 0);
+
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let cData = days.map(day => ({ name: day, time: 0 }));
+    
+    periodRuns.forEach(r => {
+      if (r.status === 'completed' && r.endTime) {
+        const d = new Date(r.endTime);
+        const savedMins = getRunTimeSaved(r) / 60000;
+        cData[d.getDay()].time += savedMins;
+      }
+    });
+
+    const recentActivityArr = [...allEvents].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 5);
+
+    return {
+      activitiesToday: activitiesTodayCount,
+      activitiesYesterday: activitiesYesterdayCount,
+      workflowsDetected: workflowsDetectedCount,
+      workflowsYesterday: workflowsDetectedCount,
+      timeSavedMs: timeSavedMsVal,
+      timeSavedPreviousMs: timeSavedPreviousMsVal,
+      runsCount: runsCountVal,
+      runsPreviousCount: runsPreviousCountVal,
+      chartData: cData,
+      recentActivity: recentActivityArr
+    };
+  }, [allEvents, runs, automations, data, timeFilter]);
+
   if (loading && !data) {
-    return <div className="p-8 text-center text-text-secondary">Loading WorkTwin Dashboard...</div>;
+    return <div className="p-8 text-center text-text-secondary text-sm">Loading Dashboard...</div>;
   }
 
   if (!data) {
-    return <div className="p-8 text-center text-error">Failed to load dashboard data. Ensure backend is running.</div>;
+    return <div className="p-8 text-center text-error text-sm">Unable to load dashboard data.<br/><button onClick={() => window.location.reload()} className="mt-2 px-4 py-1 border border-border rounded text-text-primary hover:bg-surface-secondary">Retry</button></div>;
   }
 
-  const handleViewEvidence = async (workflowId: string) => {
+  const formatMs = (ms: number) => {
+    if (ms <= 0) return '0m';
+    const hrs = Math.floor(ms / 3600000);
+    const m = Math.floor((ms % 3600000) / 60000);
+    if (hrs > 0) return `${hrs}h ${m}m`;
+    return `${m}m`;
+  };
+
+  const getTrend = (current: number, previous: number) => {
+    if (previous === 0) return current > 0 ? `↑ 100% vs previous` : 'No previous data';
+    const diff = current - previous;
+    const pct = Math.round((Math.abs(diff) / previous) * 100);
+    return diff >= 0 ? `↑ ${pct}% vs previous` : `↓ ${Math.abs(pct)}% vs previous`;
+  };
+
+  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  const handleBuildAutomation = async () => {
+    if (!data.topOpportunity || !data.aiAnalysis) return;
+    setIsGenerating(true);
     try {
-      const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/sessions/${workflowId}/events`);
-      const events = await res.json();
-      setEvidenceEvents(events);
+      const response = await fetch(`${API_URL}/api/automation/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          aiAnalysis: data.aiAnalysis, 
+          workflowId: data.topOpportunity.targetWorkflowId 
+        })
+      });
+      const result = await response.json();
+      if (result.success) {
+        navigate(`/builder?planId=${result.planId}`);
+      } else {
+        alert('Failed to generate automation plan');
+      }
     } catch (e) {
       console.error(e);
+      alert('Error generating automation');
+    } finally {
+      setIsGenerating(false);
     }
   };
 
-  // Derived formatting
-  const formattedTimeSaved = data.timeSaved 
-    ? `${Math.floor(data.timeSaved / 3600000)}h ${Math.floor((data.timeSaved % 3600000) / 60000)}m` 
-    : '0h 0m';
-    
-  const formatTime = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-  // Simulate historical periods using real baseline for the demo
-  const displayTimeSavedMs = timeFilter === 'This Week' ? data.timeSaved 
-                           : timeFilter === 'Last Week' ? data.timeSaved * 0.7 
-                           : data.timeSaved * 2.5;
-
-  const displayFormattedTime = displayTimeSavedMs 
-    ? `${Math.floor(displayTimeSavedMs / 3600000)}h ${Math.floor((displayTimeSavedMs % 3600000) / 60000)}m` 
-    : '0h 0m';
-
-  const chartData = timeFilter === 'This Week' ? data.chartData
-                  : timeFilter === 'Last Week' ? data.chartData.map((d:any) => ({...d, time: d.time * 0.7}))
-                  : data.chartData.map((d:any) => ({...d, time: d.time * 2.5}));
+  const displayFormattedTime = formatMs(timeSavedMs);
 
   return (
-    <div className="space-y-6 max-w-[1400px] mx-auto animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-500 pb-12 pt-4 max-w-[1400px] w-full mx-auto">
       
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-black text-text-primary tracking-tight mb-2">Good morning, Rudra.</h1>
+          <p className="text-sm text-text-secondary flex items-center gap-2">
+            TRACE learns how you work and helps automate repetitive work. 
+            {isActive ? (
+              <span className="text-success flex items-center gap-1 font-bold text-xs bg-success/10 px-2 py-0.5 rounded border border-success/20">
+                <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span> Observation Active
+              </span>
+            ) : (
+              <span className="text-text-muted flex items-center gap-1 font-bold text-xs bg-surface-secondary px-2 py-0.5 rounded border border-border">
+                <span className="w-2 h-2 rounded-full bg-text-muted"></span> Observation Not Started
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+
       {/* Top Stat Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: 'Activities Today', value: data.activitiesToday, trend: '↑ 35% vs yesterday', icon: Activity, color: 'text-accent', bg: 'bg-accent/10', link: '/activity' },
-          { title: 'Workflows Detected', value: data.workflowsDetected, trend: '↑ 50% vs yesterday', icon: Layers, color: 'text-info', bg: 'bg-info/10', link: '/workflows' },
-          { title: 'Time Saved (This Week)', value: formattedTimeSaved, trend: '↑ 28% vs last week', icon: Clock, color: 'text-success', bg: 'bg-success/10', link: '/insights' },
-          { title: 'Automations Run', value: data.automationsRun, trend: '↑ 20% vs last week', icon: Zap, color: 'text-warning', bg: 'bg-warning/10', link: '/executions' },
+          { title: 'Activities Today', value: activitiesToday, trend: getTrend(activitiesToday, activitiesYesterday), trendColor: activitiesToday >= activitiesYesterday ? 'text-success' : 'text-error', icon: Activity, onClick: () => navigate('/activity') },
+          { title: 'Workflows Detected', value: workflowsDetected, trend: 'No previous data', trendColor: 'text-text-muted', icon: Layers, onClick: () => navigate('/workflows') },
+          { title: `Time Saved (${timeFilter})`, value: displayFormattedTime, trend: getTrend(timeSavedMs, timeSavedPreviousMs), trendColor: timeSavedMs >= timeSavedPreviousMs ? 'text-success' : 'text-error', icon: Clock, onClick: () => navigate('/insights') },
+          { title: 'Automations Run', value: runsCount, trend: getTrend(runsCount, runsPreviousCount), trendColor: runsCount >= runsPreviousCount ? 'text-success' : 'text-error', icon: Zap, onClick: () => navigate('/executions') },
         ].map((stat, i) => (
-          <div key={i} onClick={() => navigate(stat.link)} className="cursor-pointer hover:border-accent/30 transition-all glass-card rounded-xl p-5 flex flex-col justify-between relative overflow-hidden group">
-            <div className="flex items-start gap-4 mb-2">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${stat.bg}`}>
-                <stat.icon className={`w-5 h-5 ${stat.color}`} />
+          <div key={i} onClick={stat.onClick} className="solid-card group p-6 flex flex-col justify-between cursor-pointer">
+            <div className="flex items-center gap-3 mb-4 text-text-primary">
+              <div className="w-8 h-8 rounded bg-surface-secondary border border-border flex items-center justify-center group-hover:border-accent/50 transition-colors">
+                <stat.icon className="w-4 h-4 group-hover:text-accent transition-colors" />
               </div>
-              <div>
-                <p className="text-xs font-medium text-text-secondary mb-0.5">{stat.title}</p>
-                <h3 className="text-2xl font-bold text-text-primary">{stat.value}</h3>
-              </div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-text-primary">{stat.title}</span>
             </div>
-            <p className={`text-[10px] font-medium ml-14 ${stat.trend.includes('↑') ? 'text-success' : 'text-text-muted'}`}>{stat.trend}</p>
-            
-            <svg className="absolute bottom-0 right-0 w-32 h-12 opacity-30" viewBox="0 0 100 30" preserveAspectRatio="none">
-              <path d="M0,30 L20,15 L40,25 L60,10 L80,20 L100,5" fill="none" stroke="currentColor" strokeWidth="2" className={stat.color} />
-            </svg>
+            <div>
+              <h3 className="text-3xl font-black text-text-primary tracking-tight mb-1">{stat.value}</h3>
+              <p className={`text-[10px] font-bold ${stat.trendColor}`}>{stat.trend}</p>
+            </div>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* Recent Activity Timeline */}
-        <div className="lg:col-span-4 glass-card rounded-xl p-5 flex flex-col">
+        {/* Column 1: Recent Activity */}
+        <div className="solid-card p-6 flex flex-col h-[400px]">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-semibold text-text-primary">Recent Activity</h2>
-            <button onClick={() => navigate('/recorder')} className="text-xs text-accent hover:text-accent-hover">View all</button>
+            <h2 className="text-[10px] font-bold text-text-primary uppercase tracking-widest">Recent Activity</h2>
+            <button onClick={() => navigate('/activity')} className="text-[10px] font-bold text-text-secondary hover:text-text-primary">View all</button>
           </div>
-          <div className="flex-1 relative">
-            <div className="absolute top-2 bottom-2 left-[5px] w-0.5 bg-border"></div>
-            <div className="space-y-6">
-              {data.recentActivity && data.recentActivity.length > 0 ? data.recentActivity.map((act: any, i: number) => {
+          
+          <div className="flex-1 overflow-y-auto pr-2">
+            <div className="space-y-0 relative">
+              {recentActivity.length > 0 ? recentActivity.map((act: any, i: number) => {
                 let icon = FileText;
-                let color = 'text-text-secondary';
-                let bg = 'bg-surface-secondary';
-                
-                if (act.app === 'Spreadsheet') { icon = Database; color = 'text-success'; bg = 'bg-success/10'; }
-                else if (act.app === 'Gmail') { icon = Zap; color = 'text-warning'; bg = 'bg-warning/10'; }
+                if (act.app === 'Spreadsheet' || act.application === 'Excel') icon = Database;
+                else if (act.app === 'Gmail') icon = Zap;
 
                 return (
-                  <div key={i} onClick={() => setSelectedEvent(act)} className="flex gap-4 relative cursor-pointer hover:bg-surface-secondary p-2 rounded-lg -mx-2 transition-colors">
-                    <div className="w-3 h-3 rounded-full bg-accent border-[3px] border-surface absolute left-[3px] top-3 z-10"></div>
-                    <div className="w-16 text-[10px] text-text-muted pt-1 shrink-0">{formatTime(act.timestamp)}</div>
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${bg}`}>
-                      {React.createElement(icon, { className: `w-4 h-4 ${color}` })}
+                  <div key={i} className="flex gap-4 relative pb-6">
+                    {/* Timeline line */}
+                    {i !== recentActivity.length - 1 && (
+                      <div className="absolute top-5 left-[23px] bottom-0 w-px bg-border"></div>
+                    )}
+                    
+                    <div className="text-[10px] font-bold text-text-secondary mt-1 w-10 text-right shrink-0">
+                      {formatTime(act.timestamp)}
                     </div>
-                    <div className="flex-1 pt-0.5 pb-2">
-                      <p className="text-xs font-semibold text-text-primary leading-tight capitalize">{act.semanticAction || act.action}</p>
-                      <p className="text-[10px] text-text-muted truncate">{act.elementName || act.target}</p>
+                    
+                    <div className="w-6 h-6 rounded-full bg-surface border border-border flex items-center justify-center relative z-10 shrink-0 mt-0.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-warning"></div>
+                    </div>
+                    
+                    <div className="flex-1 bg-surface-secondary border border-border rounded p-3 text-xs shadow-sm">
+                      <div className="font-bold text-text-primary mb-1">{act.action === 'click' ? `Clicked in ${act.application || 'Chrome'}` : act.action === 'type' ? `Typed in ${act.application || 'Chrome'}` : `Action in ${act.application || 'Chrome'}`}</div>
+                      <div className="text-text-secondary truncate">{act.metadata?.elementName || act.metadata?.typedText || act.action}</div>
                     </div>
                   </div>
                 );
               }) : (
-                <div className="text-xs text-text-muted p-4 text-center">No recent activity detected.</div>
+                <div className="flex-1 flex flex-col items-center justify-center h-full pt-12">
+                  <Activity className="w-8 h-8 text-border mb-3" />
+                  <div className="text-xs text-text-muted text-center font-bold">No recent activity</div>
+                  <div className="text-[10px] text-text-muted text-center mt-1">Start observation to record events</div>
+                </div>
               )}
             </div>
           </div>
-          <button onClick={() => navigate('/recorder')} className="w-full mt-4 py-3 text-xs font-medium text-text-secondary hover:text-text-primary transition-colors flex items-center justify-center gap-2 border-t border-border">
-            View full activity timeline <ArrowRight className="w-3 h-3" />
-          </button>
         </div>
 
-        {/* Top Automation Opportunity */}
-        <div className="lg:col-span-4 glass-card rounded-xl p-6 flex flex-col border border-accent/20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-accent/10 blur-3xl rounded-full -mr-20 -mt-20 pointer-events-none"></div>
+        {/* Column 2: Trace Opportunity */}
+        <div className="solid-card p-6 flex flex-col h-[400px]">
+          <h2 className="text-[10px] font-bold text-text-primary uppercase tracking-widest mb-6 flex items-center gap-2">
+            <TraceLogo className="text-xs text-text-primary" /> Opportunity
+          </h2>
           
-          <div className="flex items-center gap-2 mb-6 relative z-10">
-            <Zap className="w-5 h-5 text-accent" />
-            <h2 className="text-sm font-bold text-text-primary">🤖 AI Automation Opportunity</h2>
-          </div>
-
-          {data.topOpportunity && data.aiAnalysis ? (
-            <div className="flex-1 border border-border bg-surface-secondary/50 rounded-xl p-5 flex flex-col relative z-10">
-              <h3 className="text-lg font-bold text-text-primary truncate mb-1">{data.topOpportunity.name}</h3>
-              <p className="text-xs text-text-secondary mb-4 italic">
-                "WorkTwin noticed that..."
-              </p>
+          {data.topOpportunity ? (
+            <div className="flex-1 flex flex-col">
+              <h3 className="text-lg font-bold text-text-primary mb-1">{data.topOpportunity.name}</h3>
+              <p className="text-[11px] text-text-secondary italic mb-6">"TRACE noticed a repetitive workflow"</p>
               
-              <div className="grid grid-cols-2 gap-3 mb-6">
-                <div className="bg-surface p-3 rounded-lg border border-border">
-                  <p className="text-[10px] text-text-muted mb-0.5">Automation Potential</p>
-                  <p className="text-sm font-bold text-success">{data.aiAnalysis.automationPotential}%</p>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-surface-secondary rounded border border-border p-4">
+                  <p className="text-[10px] text-text-muted font-bold uppercase mb-1">Automation Potential</p>
+                  <p className="text-2xl font-black text-success">{data.aiAnalysis?.automationPotential || 85}%</p>
                 </div>
-                <div className="bg-surface p-3 rounded-lg border border-border">
-                  <p className="text-[10px] text-text-muted mb-0.5">Repetitions</p>
-                  <p className="text-sm font-bold text-text-primary">{data.topOpportunity.occurrenceCount}</p>
+                <div className="bg-surface-secondary rounded border border-border p-4">
+                  <p className="text-[10px] text-text-muted font-bold uppercase mb-1">Repetitions</p>
+                  <p className="text-2xl font-black text-text-primary">{data.topOpportunity.occurrenceCount}</p>
                 </div>
-                <div className="bg-surface p-3 rounded-lg border border-border">
-                  <p className="text-[10px] text-text-muted mb-0.5">Avg. Time</p>
-                  <p className="text-sm font-bold text-text-primary">{Math.round(data.topOpportunity.averageDurationSeconds / 60)} min</p>
+                <div className="bg-surface-secondary rounded border border-border p-4">
+                  <p className="text-[10px] text-text-muted font-bold uppercase mb-1">Avg. Time</p>
+                  <p className="text-xl font-bold text-text-primary">{Math.max(1, Math.round((data.topOpportunity.averageDurationSeconds || 0)/60))} min</p>
                 </div>
-                <div className="bg-surface p-3 rounded-lg border border-border">
-                  <p className="text-[10px] text-text-muted mb-0.5">Potential Saving</p>
-                  <p className="text-sm font-bold text-success">{data.aiAnalysis.estimatedTimeSaving}</p>
+                <div className="bg-surface-secondary rounded border border-border p-4">
+                  <p className="text-[10px] text-text-muted font-bold uppercase mb-1">Potential Saving</p>
+                  <p className="text-xl font-bold text-success">~{Math.max(1, Math.round((data.topOpportunity.averageDurationSeconds || 0)/60))}m/run</p>
                 </div>
               </div>
 
-              <div className="mb-4">
-                <h4 className="text-xs font-semibold text-text-primary mb-1">Why automate?</h4>
-                <p className="text-[11px] text-text-secondary leading-relaxed bg-warning/5 border border-warning/10 p-3 rounded-lg">
-                  {data.aiAnalysis.whyAutomate}
-                </p>
-              </div>
-
-              <div className="mb-6 flex-1">
-                <h4 className="text-xs font-semibold text-text-primary mb-1">Recommended</h4>
-                <p className="text-[11px] text-text-secondary leading-relaxed bg-accent/5 border border-accent/10 p-3 rounded-lg">
-                  {data.aiAnalysis.recommendedAction}
-                </p>
-              </div>
-              
-              <div className="pt-4 border-t border-border flex gap-3">
-                <button onClick={() => navigate(`/analysis?workflowId=${data.topOpportunity.targetWorkflowId}`)} className="flex-1 py-2.5 bg-accent hover:bg-accent-hover text-white text-sm font-semibold rounded-lg shadow-lg transition-all flex items-center justify-center gap-2">
-                  <Zap className="w-4 h-4" /> Build Automation
-                </button>
-                <button onClick={() => handleViewEvidence(data.topOpportunity.targetWorkflowId)} className="px-4 py-2.5 bg-surface hover:bg-surface-secondary text-text-primary text-sm font-semibold rounded-lg border border-border transition-all">
-                  View Evidence
+              <div className="mt-auto">
+                <button 
+                  onClick={handleBuildAutomation}
+                  disabled={isGenerating}
+                  className="w-full py-3 bg-text-primary text-background text-xs font-bold rounded hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? 'Building...' : 'Build Automation'}
                 </button>
               </div>
             </div>
           ) : (
-             <div className="flex-1 flex flex-col items-center justify-center text-text-muted text-sm border border-border bg-surface-secondary/50 rounded-xl p-5">
-               <span className="mb-2">AI analysis unavailable.</span>
-               <span className="text-xs">Showing deterministic workflow analytics.</span>
+             <div className="flex-1 flex flex-col items-center justify-center text-xs text-text-muted">
+                <Bot className="w-8 h-8 text-border mb-3" />
+                No major opportunities detected yet.
              </div>
           )}
         </div>
 
-        {/* Time Saved Overview */}
-        <div className="lg:col-span-4 glass-card rounded-xl p-5 flex flex-col">
+        {/* Column 3: Time Saved Overview */}
+        <div className="solid-card p-6 flex flex-col h-[400px]">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-semibold text-text-primary">Time Saved Overview</h2>
+            <h2 className="text-[10px] font-bold text-text-primary uppercase tracking-widest">Time Saved Overview</h2>
             <select 
               value={timeFilter}
               onChange={(e) => setTimeFilter(e.target.value)}
-              className="bg-transparent text-xs text-text-secondary border-none outline-none cursor-pointer"
+              className="bg-surface text-[10px] font-bold text-text-primary border border-border outline-none cursor-pointer rounded px-2 py-1 focus:border-accent transition-colors"
             >
+              <option>Today</option>
               <option>This Week</option>
-              <option>Last Week</option>
               <option>This Month</option>
+              <option>All Time</option>
             </select>
           </div>
           
-          <div className="mb-4">
-            <p className="text-[10px] text-text-muted mb-0.5">Total Time Saved</p>
-            <h3 className="text-2xl font-bold text-text-primary">{displayFormattedTime}</h3>
-            <p className="text-[10px] text-success font-medium">↑ 28% vs previous</p>
+          <div className="mb-6">
+             <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Total Time Saved</p>
+             <h3 className="text-3xl font-black text-text-primary tracking-tight mb-1">{displayFormattedTime}</h3>
+             <p className={`text-[10px] font-bold ${timeSavedMs >= timeSavedPreviousMs ? 'text-success' : 'text-error'}`}>{getTrend(timeSavedMs, timeSavedPreviousMs)}</p>
           </div>
 
-          <div className="flex-1 min-h-[150px] mb-4">
+          <div className="flex-1 w-full min-h-[150px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 10}} tickFormatter={(v) => `${v}m`} />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: 'var(--text-muted)', fontSize: 10}} dy={10} />
-                <Tooltip cursor={{fill: 'var(--surface-secondary)'}} contentStyle={{backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '8px', color: 'var(--text-primary)'}} />
-                <Bar dataKey="time" fill="var(--accent)" radius={[4, 4, 0, 0]} barSize={20} />
-              </BarChart>
+              <LineChart data={chartData} margin={{ top: 5, right: 0, left: -25, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" opacity={0.5} />
+                <YAxis axisLine={false} tickLine={false} tick={{fill: 'var(--text-secondary)', fontSize: 9, fontWeight: 500}} tickFormatter={(v) => `${Math.round(v)}m`} />
+                <XAxis dataKey="name" hide />
+                <Tooltip 
+                  cursor={{stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4'}} 
+                  contentStyle={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: '8px', fontSize: '11px', fontWeight: 'bold' }}
+                  itemStyle={{ color: 'var(--text-primary)' }}
+                />
+                <Line type="monotone" dataKey="time" stroke="var(--warning)" strokeWidth={3} dot={{r: 4, fill: 'var(--surface)', strokeWidth: 2}} activeDot={{r: 6, fill: 'var(--warning)', strokeWidth: 0}} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
-          
-          <div className="py-3 bg-surface-secondary rounded-lg border border-border text-center flex items-center justify-center gap-2">
-            <Clock className="w-3.5 h-3.5 text-text-secondary" />
-            <span className="text-xs text-text-secondary">That's like getting <span className="font-bold text-text-primary">{(displayTimeSavedMs / (8*3600000)).toFixed(1)} days back!</span></span>
-          </div>
         </div>
+
       </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
-        {/* Detected Workflows Table */}
-        <div className="lg:col-span-8 glass-card rounded-xl p-5">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-sm font-semibold text-text-primary">Detected Workflows</h2>
-            <button onClick={() => navigate('/history')} className="text-xs text-accent hover:text-accent-hover">View all</button>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-border text-[10px] text-text-muted uppercase tracking-wider">
-                  <th className="pb-3 font-medium">Workflow Name</th>
-                  <th className="pb-3 font-medium">Repetitions</th>
-                  <th className="pb-3 font-medium">Automation Score</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 font-medium text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border text-sm text-text-secondary">
-                {data.detectedWorkflows && data.detectedWorkflows.map((row: any, i: number) => {
-                   const isReady = row.status === 'Ready';
-                   const sbg = isReady ? 'text-success bg-success/10 border-success/20' : 'text-warning bg-warning/10 border-warning/20';
-                   return (
-                  <tr key={i} className="hover:bg-surface-secondary/50 transition-colors">
-                    <td className="py-4">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center bg-accent/10`}>
-                          <Layers className={`w-4 h-4 text-accent`} />
-                        </div>
-                        <div>
-                          <p className="font-semibold text-text-primary">{row.name}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 font-medium">{row.occurrenceCount}</td>
-                    <td className="py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-text-primary">{row.score}%</span>
-                        <div className="w-16 h-1.5 bg-surface-secondary rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${isReady ? 'bg-success' : 'bg-warning'}`} style={{ width: `${row.score}%` }}></div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4">
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full border ${sbg} flex items-center gap-1 w-max`}>
-                        <span className="w-1 h-1 rounded-full bg-current"></span> {row.status}
-                      </span>
-                    </td>
-                    <td className="py-4 text-right">
-                      <button onClick={() => navigate(`/analysis?workflowId=${row.targetWorkflowId}`)} className="text-[10px] font-semibold text-text-primary bg-surface hover:bg-surface-secondary px-3 py-1.5 rounded border border-border mr-2 transition-colors">View</button>
-                      <button className="text-text-muted hover:text-text-primary p-1"><MoreVertical className="w-4 h-4" /></button>
-                    </td>
-                  </tr>
-                )})}
-              </tbody>
-            </table>
-            {(!data.detectedWorkflows || data.detectedWorkflows.length === 0) && (
-              <div className="p-4 text-center text-text-muted text-sm">No workflows detected yet. Keep working!</div>
-            )}
-          </div>
-        </div>
-
-        {/* Bottom Right Column */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
-          
-          {/* Recent Automations */}
-          <div className="glass-card rounded-xl p-5 flex-1">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-sm font-semibold text-text-primary">Recent Automations</h2>
-              <button onClick={() => navigate('/automations')} className="text-xs text-accent hover:text-accent-hover">View all</button>
-            </div>
-            
-            <div className="space-y-4">
-              {data.recentAutomations && data.recentAutomations.map((item: any, i: number) => (
-                <div key={i} onClick={() => navigate(`/execute/${item.runId}`)} className="flex items-center justify-between p-3 rounded-lg bg-surface border border-border hover:bg-surface-secondary transition-colors cursor-pointer">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded flex items-center justify-center bg-info/10`}>
-                      <Zap className={`w-4 h-4 text-info`} />
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-text-primary truncate max-w-[150px]">{item.automationId}</p>
-                      <p className="text-[10px] text-text-muted">Completed • {new Date(item.completedAt).toLocaleTimeString()}</p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-medium text-text-secondary">
-                    {Math.round((item.completedAt - item.startedAt) / 1000)}s
-                  </span>
-                </div>
-              ))}
-              {(!data.recentAutomations || data.recentAutomations.length === 0) && (
-                <div className="text-xs text-text-muted text-center">No recent runs</div>
-              )}
-            </div>
-          </div>
-
-          {/* Insight Card */}
-          <div className="rounded-xl p-5 bg-gradient-to-br from-accent/20 to-info/10 border border-accent/20 relative overflow-hidden flex flex-col justify-between">
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <Star className="w-4 h-4 text-warning fill-warning" />
-                <h3 className="text-xs font-bold text-text-primary">WorkTwin Insight</h3>
-              </div>
-              <p className="text-sm text-text-secondary leading-relaxed relative z-10 mb-4">
-                {data.insight}
-              </p>
-              {data.topInsight && (
-                <p className="text-xs font-semibold text-success mb-6">
-                  Estimated automation opportunity: 87%
-                </p>
-              )}
-            </div>
-            
-            <button 
-              onClick={() => navigate('/insights')} 
-              className="w-max px-4 py-2 bg-accent/20 hover:bg-accent/40 border border-accent/30 text-accent text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 relative z-10"
-            >
-              View Insight <ArrowRight className="w-3 h-3" />
-            </button>
-
-            <div className="absolute bottom-2 right-2 opacity-30 flex items-end gap-0.5 pointer-events-none">
-               {[2,4,3,6,8,5].map((h,i) => <div key={i} className="w-1.5 bg-accent rounded-t" style={{height: `${h*3}px`}}></div>)}
-            </div>
-          </div>
-          
-        </div>
-      </div>
-
-      {selectedEvent && (
-        <InspectModal event={selectedEvent} onClose={() => setSelectedEvent(null)} />
-      )}
-      
-      {evidenceEvents && (
-        <EvidenceModal 
-          events={evidenceEvents} 
-          title={data.topOpportunity?.name || "Workflow"} 
-          onClose={() => setEvidenceEvents(null)} 
-        />
-      )}
     </div>
   );
 }

@@ -9,8 +9,17 @@ const router = Router();
 const dbService = new DbService();
 const aiService = new AiService();
 const patternService = new PatternService(dbService);
-const executionService = new ExecutionService(dbService);
 const intelligenceService = new IntelligenceService(dbService);
+
+// ExecutionService needs io — we'll lazily pass it via a factory on first use
+let executionService: ExecutionService;
+const getExecutionService = (req: any) => {
+  if (!executionService) {
+    const io = req.app.get('io');
+    executionService = new ExecutionService(dbService, io);
+  }
+  return executionService;
+};
 
 
 router.get('/workflows', async (req, res) => {
@@ -161,6 +170,15 @@ router.get('/automations', async (req, res) => {
   }
 });
 
+router.delete('/automations/:id', async (req, res) => {
+  try {
+    await dbService.deleteAutomation(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete automation' });
+  }
+});
+
 router.post('/automations/:id/approve', async (req, res) => {
   try {
     const { id } = req.params;
@@ -179,7 +197,7 @@ router.post('/automations/:id/approve', async (req, res) => {
 router.post('/automations/:id/execute', async (req, res) => {
   try {
     const { id } = req.params;
-    const runId = await executionService.startExecution(id);
+    const runId = await getExecutionService(req).startExecution(id);
     res.json({ success: true, runId });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start execution' });
@@ -200,7 +218,7 @@ router.get('/executions/:runId', async (req, res) => {
 router.post('/executions/:runId/approve', async (req, res) => {
   try {
     const { runId } = req.params;
-    await executionService.resumeExecution(runId);
+    await getExecutionService(req).resumeExecution(runId);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to resume execution' });
@@ -210,7 +228,7 @@ router.post('/executions/:runId/approve', async (req, res) => {
 router.post('/executions/:runId/cancel', async (req, res) => {
   try {
     const { runId } = req.params;
-    await executionService.cancelExecution(runId);
+    await getExecutionService(req).cancelExecution(runId);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: 'Failed to cancel execution' });
@@ -264,6 +282,7 @@ router.post('/settings/observation', async (req, res) => {
     
     if (active) {
       if (!sessionId) {
+        await dbService.clearObservationData();
         sessionId = `sess_${Date.now()}`;
         dbService.setActiveWorkflowId(sessionId);
         

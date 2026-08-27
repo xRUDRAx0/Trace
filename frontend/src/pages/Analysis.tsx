@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Bot, Zap, ArrowRight, ShieldCheck, Clock, Layers, Activity, AlertTriangle, PlayCircle } from 'lucide-react';
+import { API_URL } from '../config';
 
 interface AnalysisData {
   pattern: {
@@ -43,7 +44,7 @@ export default function Analysis() {
 
     const fetchAnalysis = async () => {
       try {
-        const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/api/workflows/${workflowId}/analyze`, {
+        const response = await fetch(`${API_URL}/api/workflows/${workflowId}/analyze`, {
           method: 'POST'
         });
         const result = await response.json();
@@ -67,7 +68,7 @@ export default function Analysis() {
     if (!data || !workflowId) return;
     setGenerating(true);
     try {
-      const response = await fetch((import.meta.env.VITE_API_URL || 'http://localhost:3001') + '/api/automation/generate', {
+      const response = await fetch(`${API_URL}/api/automation/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ aiAnalysis: data.ai, workflowId })
@@ -193,7 +194,7 @@ export default function Analysis() {
                           <p className={`text-xs mt-1 ${isManual ? 'text-warning/80' : 'text-text-secondary'}`}>
                             {isManual 
                               ? 'Flagged for Human Approval checkpoint before proceeding.' 
-                              : 'Highly automatable step. Executable by WorkTwin Agent.'}
+                              : 'Highly automatable step. Executable by TRACE Agent.'}
                           </p>
                         </div>
                       </div>

@@ -297,6 +297,45 @@ export class DbService {
     return [...memoryAutomations];
   }
 
+  async deleteAutomation(planId: string): Promise<void> {
+    if (useFirestore) {
+      const batch = admin.firestore().batch();
+      batch.delete(admin.firestore().collection('automations').doc(planId));
+      
+      const execs = await admin.firestore().collection('executions').where('automationId', '==', planId).get();
+      execs.forEach(doc => batch.delete(doc.ref));
+      
+      await batch.commit();
+    } else {
+      memoryAutomations = memoryAutomations.filter(a => a.id !== planId);
+      memoryExecutions = memoryExecutions.filter(e => e.automationId !== planId);
+      saveLocalDB();
+    }
+  }
+
+  async clearObservationData(): Promise<void> {
+    if (useFirestore) {
+      const batch = admin.firestore().batch();
+      
+      const events = await admin.firestore().collection('events').get();
+      events.forEach(doc => batch.delete(doc.ref));
+      
+      const sessions = await admin.firestore().collection('sessions').get();
+      sessions.forEach(doc => batch.delete(doc.ref));
+      
+      const workflows = await admin.firestore().collection('workflows').get();
+      workflows.forEach(doc => batch.delete(doc.ref));
+
+      await batch.commit();
+    } else {
+      memoryEvents = [];
+      memorySessions = [];
+      memoryWorkflows = [];
+      cachedAiAnalysis = null;
+      saveLocalDB();
+    }
+  }
+
   async saveExecutionRun(run: ExecutionRun): Promise<void> {
     if (useFirestore) {
       await admin.firestore().collection('executions').doc(run.runId).set(run);
