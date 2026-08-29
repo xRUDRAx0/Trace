@@ -1,15 +1,34 @@
 import { Router } from 'express';
 import { AiService } from '../services/ai.service';
-import { DbService, Workflow, WorkflowEvent, ObservationSession } from '../services/db.service';
+import { DbService, Workflow, WorkflowEvent, ObservationSession, TraceSkill } from '../services/db.service';
 import { PatternService } from '../services/pattern.service';
 import { ExecutionService } from '../services/execution.service';
 import { IntelligenceService } from '../services/intelligence.service';
+import { AsiOneService } from '../services/asiOne.service';
+import { ToolRegistryService } from '../services/toolRegistry.service';
+import { AgentChatProtocolService } from '../services/agentChatProtocol.service';
+import { OrchestratorService } from '../services/orchestrator.service';
 
 const router = Router();
 const dbService = new DbService();
 const aiService = new AiService();
 const patternService = new PatternService(dbService);
 const intelligenceService = new IntelligenceService(dbService);
+const asiService = new AsiOneService();
+const toolRegistry = new ToolRegistryService();
+const acpService = new AgentChatProtocolService();
+
+let orchestratorService: OrchestratorService;
+const getOrchestratorService = (req: any) => {
+  if (!orchestratorService) {
+    const io = req.app.get('io');
+    orchestratorService = new OrchestratorService(dbService, toolRegistry, asiService, aiService, io);
+  } else {
+    const io = req.app.get('io');
+    if (io) orchestratorService.setIo(io);
+  }
+  return orchestratorService;
+};
 
 // ExecutionService needs io — we'll lazily pass it via a factory on first use
 let executionService: ExecutionService;
@@ -479,4 +498,225 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
+// ==========================================
+// AGENT ORCHESTRATION ENDPOINTS
+// ==========================================
+
+router.post('/agent/task', async (req, res) => {
+  try {
+    const { intent, origin } = req.body;
+    if (!intent || !intent.trim()) {
+      return res.status(400).json({ error: 'Intent is required' });
+    }
+    const task = await getOrchestratorService(req).processIntent(intent, origin || 'user');
+    res.json(task);
+  } catch (error: any) {
+    console.error('Error processing agent task:', error);
+    res.status(500).json({ error: error.message || 'Failed to process agent task' });
+  }
+});
+
+router.get('/agent/task/:taskId', async (req, res) => {
+  try {
+    const task = await dbService.getAgentTask(req.params.taskId);
+    if (!task) return res.status(404).json({ error: 'Agent task not found' });
+    res.json(task);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch agent task' });
+  }
+});
+
+router.get('/agent/tasks', async (req, res) => {
+  try {
+    const tasks = await dbService.getAllAgentTasks();
+    res.json(tasks);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch agent tasks' });
+  }
+});
+
+router.post('/agent/task/:taskId/approve', async (req, res) => {
+  try {
+    const task = await getOrchestratorService(req).approveTask(req.params.taskId);
+    res.json({ success: true, task });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to approve agent task' });
+  }
+});
+
+router.post('/agent/task/:taskId/cancel', async (req, res) => {
+  try {
+    const task = await getOrchestratorService(req).cancelTask(req.params.taskId);
+    res.json({ success: true, task });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Failed to cancel agent task' });
+  }
+});
+
+// ==========================================
+// AGENT CHAT PROTOCOL & IDENTITY (ACP)
+// ==========================================
+
+router.get('/agent/identity', (req, res) => {
+  const host = req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined;
+  res.json(acpService.getIdentity(host));
+});
+
+router.get('/agent/manifest', (req, res) => {
+  const host = req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined;
+  res.json(acpService.getManifest(host));
+});
+
+router.post('/agent/chat', async (req, res) => {
+  try {
+    const { msg_id, content } = req.body;
+    if (!msg_id || !Array.isArray(content)) {
+      return res.status(400).json({ error: 'Invalid Agent Chat Protocol payload' });
+    }
+
+    // Immediate ACP Acknowledgment
+    const ack = acpService.createAcknowledgement(msg_id);
+
+    // Extract text content
+    let text = '';
+    for (const item of content) {
+      if (item.type === 'text') text += item.text + ' ';
+    }
+    const intent = text.trim() || 'Process status request';
+
+    // Dispatch asynchronously
+    const task = await getOrchestratorService(req).processIntent(intent, 'acp');
+
+    // Return protocol-compliant reply
+    const reply = acpService.createTextChatMessage(
+      `✓ TRACE accepted task "${intent}". Task ID: ${task.id}. Active agents: ${task.activeAgents.join(', ')}`
+    );
+
+    res.json({
+      ack,
+      response: reply,
+      task,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'ACP chat handler failed' });
+  }
+});
+
+// ==========================================
+// TOOLS & SKILLS
+// ==========================================
+
+router.get('/agent/tools', (req, res) => {
+  res.json({
+    tools: toolRegistry.getAllTools().map((t) => ({
+      name: t.name,
+      description: t.description,
+      category: t.category,
+      permissionLevel: t.permissionLevel,
+      requiresApproval: t.requiresApproval,
+      parameters: t.parameters,
+    })),
+    asiSchema: toolRegistry.getToolsAsAsiSchema(),
+  });
+});
+
+router.post('/agent/tools/execute', async (req, res) => {
+  try {
+    const { tool, args } = req.body;
+    if (!tool) return res.status(400).json({ error: 'Tool name required' });
+    const result = await toolRegistry.executeTool(tool, args || {});
+    res.json({ success: true, tool, result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Tool execution failed' });
+  }
+});
+
+router.get('/agent/skills', async (req, res) => {
+  try {
+    const skills = await dbService.getSkills();
+    res.json(skills);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch skills' });
+  }
+});
+
+router.post('/agent/skills', async (req, res) => {
+  try {
+    const skill: TraceSkill = {
+      id: req.body.id || `skill_${Date.now()}`,
+      name: req.body.name,
+      description: req.body.description,
+      triggerPhrase: req.body.triggerPhrase || req.body.name,
+      actionGraph: req.body.actionGraph,
+      learnedFromSessionId: req.body.learnedFromSessionId,
+      createdAt: new Date().toISOString(),
+      runCount: 0,
+    };
+    await dbService.saveSkill(skill);
+    res.json({ success: true, skill });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to save skill' });
+  }
+});
+
+// ==========================================
+// ASI:ONE SETTINGS & AGENT DISCOVERY
+// ==========================================
+
+router.get('/settings/asi', async (req, res) => {
+  try {
+    const settings = await dbService.getAsiSettings();
+    const models = await asiService.getModels();
+    const host = req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined;
+    const identity = acpService.getIdentity(host);
+
+    res.json({
+      configured: asiService.isConfigured(),
+      settings,
+      availableModels: models,
+      identity,
+      capabilities: [
+        'Agent Discovery & Delegation via Agentverse',
+        'OpenAI-compatible API on https://api.asi1.ai/v1',
+        'Planner Mode streaming with x-session-id',
+        'Schema-validated Tool Calling with TRACE Tool Registry',
+        'Agent Chat Protocol (ACP) Interoperability',
+      ],
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch ASI:One settings' });
+  }
+});
+
+router.post('/settings/asi', async (req, res) => {
+  try {
+    const current = await dbService.getAsiSettings();
+    const updated = {
+      ...current,
+      ...req.body,
+    };
+
+    if (req.body.apiKey !== undefined) {
+      asiService.setApiKey(req.body.apiKey);
+      updated.apiKeyConfigured = Boolean(req.body.apiKey && req.body.apiKey.trim().length > 0);
+    }
+
+    await dbService.saveAsiSettings(updated);
+    res.json({ success: true, settings: updated, configured: asiService.isConfigured() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to update ASI:One settings' });
+  }
+});
+
+router.post('/agent/discover', async (req, res) => {
+  try {
+    const { query } = req.body;
+    const agents = await asiService.discoverAgents(query || 'research');
+    res.json({ success: true, query, agents });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'Discovery failed' });
+  }
+});
+
 export default router;
+

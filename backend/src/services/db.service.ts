@@ -94,6 +94,70 @@ export interface AutomationPlan {
   status: 'Draft' | 'Approved';
 }
 
+export interface ActionGraphNode {
+  id: string;
+  title: string;
+  agent: 'Research Agent' | 'Browser Agent' | 'Data Agent' | 'Document Agent' | 'Communication Agent' | 'Verification Agent' | 'ASI:One External Agent';
+  tool: string;
+  args: Record<string, any>;
+  status: 'Pending' | 'Running' | 'WaitingForApproval' | 'Completed' | 'Failed';
+  requiresApproval?: boolean;
+  approvalTitle?: string;
+  result?: any;
+  evidence?: any;
+  error?: string;
+}
+
+export interface ActionGraphEdge {
+  from: string;
+  to: string;
+}
+
+export interface ActionGraph {
+  nodes: ActionGraphNode[];
+  edges: ActionGraphEdge[];
+}
+
+export interface AgentTask {
+  id: string;
+  intent: string;
+  status: 'Pending' | 'Planning' | 'Executing' | 'WaitingForApproval' | 'Verifying' | 'Completed' | 'Failed';
+  actionGraph: ActionGraph;
+  activeAgents: string[];
+  discoveredExternalAgents?: any[];
+  currentNodeIndex: number;
+  approvalRequest?: {
+    id: string;
+    nodeId: string;
+    title: string;
+    details: any;
+    status: 'Pending' | 'Approved' | 'Rejected';
+  };
+  results: Record<string, any>;
+  evidence: Array<{ step: string; agent: string; status: string; details: any; timestamp: string }>;
+  createdAt: string;
+  completedAt?: string;
+}
+
+export interface TraceSkill {
+  id: string;
+  name: string;
+  description: string;
+  triggerPhrase: string;
+  actionGraph: ActionGraph;
+  learnedFromSessionId?: string;
+  createdAt: string;
+  runCount: number;
+}
+
+export interface AsiSettings {
+  apiKeyConfigured: boolean;
+  selectedModel: 'asi1' | 'asi1-ultra' | 'asi1-mini' | string;
+  plannerModeEnabled: boolean;
+  agentverseDiscoveryEnabled: boolean;
+  agentAddress: string;
+}
+
 export interface StepResult {
   step: string;
   status: 'Pending' | 'Running' | 'WaitingForApproval' | 'Completed' | 'Failed';
@@ -142,6 +206,15 @@ let memorySessions: ObservationSession[] = [];
 let memoryEvents: WorkflowEvent[] = [];
 let memoryAutomations: AutomationPlan[] = [demoSalesAutomation];
 let memoryExecutions: ExecutionRun[] = [];
+let memoryAgentTasks: AgentTask[] = [];
+let memorySkills: TraceSkill[] = [];
+let memoryAsiSettings: AsiSettings = {
+  apiKeyConfigured: Boolean(process.env.ASI_ONE_API_KEY && process.env.ASI_ONE_API_KEY.trim().length > 0),
+  selectedModel: 'asi1',
+  plannerModeEnabled: true,
+  agentverseDiscoveryEnabled: true,
+  agentAddress: 'agent1qv3trace89w0efu9sd7fv9sd87fv9sdf87sd98f7sd98f7sd98f7',
+};
 let observationSettings = { active: false };
 let activeSessionId: string | null = null;
 let cachedAiAnalysis: AiAnalysisResult | null = null;
@@ -155,6 +228,11 @@ try {
     memoryEvents = data.events || [];
     memoryAutomations = data.automations || [demoSalesAutomation];
     memoryExecutions = data.executions || [];
+    memoryAgentTasks = data.agentTasks || [];
+    memorySkills = data.skills || [];
+    if (data.asiSettings) {
+      memoryAsiSettings = { ...memoryAsiSettings, ...data.asiSettings };
+    }
     observationSettings = data.settings || { active: false };
     activeSessionId = data.activeSessionId || null;
     cachedAiAnalysis = data.cachedAiAnalysis || null;
@@ -173,6 +251,9 @@ const saveLocalDB = () => {
       events: memoryEvents,
       automations: memoryAutomations,
       executions: memoryExecutions,
+      agentTasks: memoryAgentTasks,
+      skills: memorySkills,
+      asiSettings: memoryAsiSettings,
       settings: observationSettings,
       activeSessionId,
       cachedAiAnalysis
@@ -416,5 +497,90 @@ export class DbService {
       return doc.exists ? (doc.data() as AiAnalysisResult) : null;
     }
     return cachedAiAnalysis;
+  }
+
+  // ==========================================
+  // AGENT TASKS & ACTION GRAPHS
+  // ==========================================
+
+  async saveAgentTask(task: AgentTask): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('agent_tasks').doc(task.id).set(task);
+    } else {
+      const idx = memoryAgentTasks.findIndex((t) => t.id === task.id);
+      if (idx >= 0) memoryAgentTasks[idx] = task;
+      else memoryAgentTasks.unshift(task);
+      saveLocalDB();
+    }
+  }
+
+  async getAgentTask(id: string): Promise<AgentTask | null> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('agent_tasks').doc(id).get();
+      return doc.exists ? (doc.data() as AgentTask) : null;
+    }
+    return memoryAgentTasks.find((t) => t.id === id) || null;
+  }
+
+  async getAllAgentTasks(): Promise<AgentTask[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('agent_tasks').orderBy('createdAt', 'desc').get();
+      return snapshot.docs.map((doc) => doc.data() as AgentTask);
+    }
+    return memoryAgentTasks;
+  }
+
+  // ==========================================
+  // SKILLS (TEACH TRACE)
+  // ==========================================
+
+  async saveSkill(skill: TraceSkill): Promise<void> {
+    if (useFirestore) {
+      await admin.firestore().collection('skills').doc(skill.id).set(skill);
+    } else {
+      const idx = memorySkills.findIndex((s) => s.id === skill.id);
+      if (idx >= 0) memorySkills[idx] = skill;
+      else memorySkills.push(skill);
+      saveLocalDB();
+    }
+  }
+
+  async getSkills(): Promise<TraceSkill[]> {
+    if (useFirestore) {
+      const snapshot = await admin.firestore().collection('skills').get();
+      return snapshot.docs.map((doc) => doc.data() as TraceSkill);
+    }
+    return memorySkills;
+  }
+
+  async getSkillById(id: string): Promise<TraceSkill | null> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('skills').doc(id).get();
+      return doc.exists ? (doc.data() as TraceSkill) : null;
+    }
+    return memorySkills.find((s) => s.id === id) || null;
+  }
+
+  // ==========================================
+  // ASI:ONE SETTINGS
+  // ==========================================
+
+  async getAsiSettings(): Promise<AsiSettings> {
+    if (useFirestore) {
+      const doc = await admin.firestore().collection('settings').doc('asi_settings').get();
+      return doc.exists ? (doc.data() as AsiSettings) : memoryAsiSettings;
+    }
+    memoryAsiSettings.apiKeyConfigured = Boolean(
+      process.env.ASI_ONE_API_KEY && process.env.ASI_ONE_API_KEY.trim().length > 0
+    );
+    return memoryAsiSettings;
+  }
+
+  async saveAsiSettings(settings: AsiSettings): Promise<void> {
+    memoryAsiSettings = settings;
+    if (useFirestore) {
+      await admin.firestore().collection('settings').doc('asi_settings').set(settings);
+    }
+    saveLocalDB();
   }
 }
