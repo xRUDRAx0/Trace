@@ -40,6 +40,18 @@ def create_text_chat(text: str, end_session: bool = False) -> 'ChatMessage':
         content=content,
     )
 
+import asyncio
+
+# Ensure an active event loop exists for Python 3.10-3.14+
+try:
+    loop = asyncio.get_event_loop()
+    if loop.is_closed():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+except (RuntimeError, Exception):
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 if UAGENTS_AVAILABLE:
     # Initialize TRACE uAgent
     trace_agent = Agent(
@@ -47,6 +59,7 @@ if UAGENTS_AVAILABLE:
         port=AGENT_PORT,
         seed=AGENT_SEED,
         endpoint=[f"http://127.0.0.1:{AGENT_PORT}/submit"],
+        loop=loop,
     )
 
     chat_proto = Protocol(spec=chat_protocol_spec)
