@@ -6,7 +6,11 @@ import { Server } from 'socket.io';
 import apiRoutes from './routes/api';
 import { DbService } from './services/db.service';
 
+import path from 'path';
+
 dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const app = express();
 const server = http.createServer(app);
@@ -60,10 +64,20 @@ io.on('connection', (socket) => {
 
   socket.on('new_event', async (event) => {
     const activeWorkflowId = dbService.getActiveWorkflowId();
-    if (activeWorkflowId) {
-      event.workflowId = activeWorkflowId;
+    const targetSessionId = activeWorkflowId || event.sessionId;
+    
+    if (targetSessionId) {
+      event.workflowId = targetSessionId;
+      event.sessionId = targetSessionId;
       await dbService.saveEvents([event]);
-      // Broadcast to frontend
+      
+      const session = await dbService.getSessionById(targetSessionId);
+      if (session) {
+        session.eventCount = (session.eventCount || 0) + 1;
+        await dbService.saveSession(session);
+      }
+      
+      // Broadcast to all connected frontend clients
       io.emit('new_event', event);
     }
   });

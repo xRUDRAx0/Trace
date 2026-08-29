@@ -666,13 +666,17 @@ router.post('/agent/skills', async (req, res) => {
 router.get('/settings/asi', async (req, res) => {
   try {
     const settings = await dbService.getAsiSettings();
+    const isConf = asiService.isConfigured();
     const models = await asiService.getModels();
     const host = req.headers.host ? `${req.protocol}://${req.headers.host}` : undefined;
     const identity = acpService.getIdentity(host);
 
     res.json({
-      configured: asiService.isConfigured(),
-      settings,
+      configured: isConf,
+      settings: {
+        ...settings,
+        apiKeyConfigured: isConf,
+      },
       availableModels: models,
       identity,
       capabilities: [

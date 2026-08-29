@@ -21,22 +21,20 @@ export class AiService {
   private ai: GoogleGenAI | null = null;
   private hasValidKey: boolean = false;
 
-  constructor() {
-    const key = process.env.GEMINI_API_KEY;
-    if (key) {
+  private getClient(): GoogleGenAI | null {
+    if (!this.ai && process.env.GEMINI_API_KEY) {
       try {
-        this.ai = new GoogleGenAI({ apiKey: key });
+        this.ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         this.hasValidKey = true;
-        console.log('Google GenAI initialized successfully.');
       } catch (err) {
         console.error('Failed to initialize Google GenAI:', err);
       }
-    } else {
-      console.log('No GEMINI_API_KEY found. Falling back to deterministic AI service.');
     }
+    return this.ai;
   }
 
   async generateDeepAnalysisFromMetrics(metricsList: BehavioralMetrics[]): Promise<AiAnalysisResult> {
+    this.getClient();
     console.log(`Generating AI Analysis... (API Key Valid: ${this.hasValidKey})`);
 
     if (metricsList.length === 0) {

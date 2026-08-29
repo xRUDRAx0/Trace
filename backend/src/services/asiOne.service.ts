@@ -51,10 +51,14 @@ export class AsiOneService {
   }
 
   isConfigured(): boolean {
-    return Boolean(this.apiKey && this.apiKey.trim().length > 0);
+    const key = this.getApiKey();
+    return Boolean(key && key.trim().length > 0);
   }
 
   getApiKey(): string | null {
+    if (!this.apiKey && process.env.ASI_ONE_API_KEY) {
+      this.apiKey = process.env.ASI_ONE_API_KEY;
+    }
     return this.apiKey;
   }
 
